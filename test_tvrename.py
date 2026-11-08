@@ -55,13 +55,13 @@ class NamingTests(unittest.TestCase):
     def test_plex_name(self):
         pf = tr.parse_file(Path("The.Office.S02E05.mkv"))
         self.assertEqual(tr.build_new_name(self.series, pf, ["Halloween"]),
-                         "The Office (US) (2005) - s02e05 - Halloween.mkv")
+                         "The Office (US) (2005) - S02E05 - Halloween.mkv")
 
     def test_illegal_characters(self):
         s = {"id": 1, "name": "Star Trek: Discovery", "year": 2017}
         pf = tr.parse_file(Path("x.S01E01.mkv"))
         self.assertEqual(tr.build_new_name(s, pf, ['What? "Now"/Then']),
-                         "Star Trek - Discovery (2017) - s01e01 - What Now-Then.mkv")
+                         "Star Trek - Discovery (2017) - S01E01 - What Now-Then.mkv")
 
     def test_year_not_doubled(self):
         s = {"id": 1, "name": "Doctor Who (2005)", "year": 2005}
@@ -70,7 +70,7 @@ class NamingTests(unittest.TestCase):
     def test_multi_episode_name(self):
         pf = tr.parse_file(Path("x.S01E01E02.mkv"))
         self.assertEqual(tr.build_new_name(self.series, pf, ["Pilot", "Pilot"]),
-                         "The Office (US) (2005) - s01e01-e02 - Pilot.mkv")
+                         "The Office (US) (2005) - S01E01-E02 - Pilot.mkv")
 
 
 class FakeTVDB:
@@ -121,8 +121,8 @@ class EndToEndTests(unittest.TestCase):
         # pick show 1; files come up as: E05 subtitle (y), E05 video (y), E06 video (n)
         self.run_tool([str(self.root)], ["1", "y", "y", "n"])
         self.assertEqual(self.names(), [
-            "The Office (US) (2005) - s02e05 - Halloween.en.srt",
-            "The Office (US) (2005) - s02e05 - Halloween.mkv",
+            "The Office (US) (2005) - S02E05 - Halloween.en.srt",
+            "The Office (US) (2005) - S02E05 - Halloween.mkv",
             "The.Office.S02E06.720p.mkv",  # answered no
             "The.Office.S02E99.mkv",       # not on TVDB, skipped
             "notes.txt",
@@ -135,7 +135,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_all_then_undo(self):
         self.run_tool([str(self.root), "--log", str(self.root / "log.jsonl")], ["1", "a"])
-        self.assertIn("The Office (US) (2005) - s02e06 - The Fight.mkv", self.names())
+        self.assertIn("The Office (US) (2005) - S02E06 - The Fight.mkv", self.names())
         log = [json.loads(l) for l in (self.root / "log.jsonl").read_text().splitlines()]
         self.assertEqual(len(log), 3)
         self.run_tool(["--undo", str(self.root / "log.jsonl")], [])
@@ -146,11 +146,18 @@ class EndToEndTests(unittest.TestCase):
         dest = self.root / "Plex TV"
         self.run_tool([str(self.show), "--organize", str(dest), "--yes", "--tvdb-id-folder"], ["1"])
         season = dest / "The Office (US) (2005) {tvdb-73244}" / "Season 02"
-        self.assertIn("The Office (US) (2005) - s02e06 - The Fight.mkv", self.names(season))
+        self.assertIn("The Office (US) (2005) - S02E06 - The Fight.mkv", self.names(season))
 
     def test_search_again_and_pick_by_id(self):
         self.run_tool([str(self.root), "--yes"], ["id 999"])
-        self.assertIn("By Id (2000) - s02e05 - Halloween.mkv", self.names())
+        self.assertIn("By Id (2000) - S02E05 - Halloween.mkv", self.names())
+
+    def test_lowercase_name_upgraded_to_capitals(self):
+        old = self.show / "The Office (US) (2005) - s01e01 - Pilot.mkv"
+        old.write_text("x")
+        self.run_tool([str(old), "--yes", "--show", "The Office"], ["1"])
+        self.assertIn("The Office (US) (2005) - S01E01 - Pilot.mkv", self.names())
+        self.assertNotIn(old.name, self.names())
 
     def test_skip_show(self):
         before = self.names()

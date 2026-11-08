@@ -10,7 +10,7 @@ For every video (and subtitle) file it finds, the tool:
   4. Shows you the new name and asks before renaming, one file at a time.
 
 Result looks like Plex's recommended convention:
-    The Office (2005) - s02e05 - Halloween.mkv
+    The Office (2005) - S02E05 - Halloween.mkv
 
 Only uses the Python standard library - no extra installs needed.
 Run `python3 tvrename.py --help` for all options.
@@ -40,7 +40,7 @@ VIDEO_EXTS = {
     ".ts", ".m2ts", ".webm", ".flv", ".divx", ".xvid", ".3gp",
 }
 SUBTITLE_EXTS = {".srt", ".sub", ".idx", ".ass", ".ssa", ".vtt", ".smi"}
-# Tags kept on subtitle files so Plex knows the language, e.g. "Show - s01e01.en.forced.srt"
+# Tags kept on subtitle files so Plex knows the language, e.g. "Show - S01E01.en.forced.srt"
 SUBTITLE_TAGS = {
     "en", "eng", "english", "es", "spa", "fr", "fre", "fra", "de", "ger", "deu", "it", "ita",
     "pt", "por", "nl", "dut", "nld", "sv", "swe", "no", "nor", "da", "dan", "fi", "fin",
@@ -321,9 +321,9 @@ def show_label(series: dict, include_year: bool = True, include_tvdb_id: bool = 
 
 
 def episode_code(season: int, episodes: list[int]) -> str:
-    code = f"s{season:02d}e{episodes[0]:02d}"
+    code = f"S{season:02d}E{episodes[0]:02d}"
     if len(episodes) > 1:
-        code += f"-e{episodes[-1]:02d}"
+        code += f"-E{episodes[-1]:02d}"
     return code
 
 
@@ -459,6 +459,14 @@ def find_files(root: Path, recursive: bool, include_subs: bool) -> list[Path]:
     return sorted(files, key=lambda p: str(p).lower())
 
 
+def same_file(a: Path, b: Path) -> bool:
+    """True if a and b are the same file (e.g. a case-only rename on a Mac or NAS)."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
 def write_log(log_path: Path, old: Path, new: Path) -> None:
     with log_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"old": str(old), "new": str(new),
@@ -566,7 +574,7 @@ def run(args) -> int:
             print()
             print(f"[{idx}/{len(items)}] {pf.path.name}")
             if missing:
-                print(f"   ! TheTVDB has no s{pf.season:02d}e{missing[0]:02d} for this show "
+                print(f"   ! TheTVDB has no S{pf.season:02d}E{missing[0]:02d} for this show "
                       f"(try --order dvd or check the number). Skipped.")
                 skipped += 1
                 continue
@@ -585,7 +593,7 @@ def run(args) -> int:
                 continue
             shown = target if dest_root else target.name
             print(f"   -> {shown}")
-            if target.exists() and target.resolve() != pf.path.resolve():
+            if target.exists() and not same_file(target, pf.path):
                 print("   ! A file with that name already exists. Skipped.")
                 skipped += 1
                 continue

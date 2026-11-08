@@ -11,8 +11,8 @@ Point it at a folder of TV episodes. For each file it:
 Result, following [Plex's naming guide](https://support.plex.tv/articles/naming-and-organizing-your-tv-show-files/):
 
 ```
-The.Office.S02E05.720p.HDTV.x264.mkv   ->   The Office (US) (2005) - s02e05 - Halloween.mkv
-The.Office.S02E05.720p.HDTV.en.srt     ->   The Office (US) (2005) - s02e05 - Halloween.en.srt
+The.Office.S02E05.720p.HDTV.x264.mkv   ->   The Office (US) (2005) - S02E05 - Halloween.mkv
+The.Office.S02E05.720p.HDTV.en.srt     ->   The Office (US) (2005) - S02E05 - Halloween.en.srt
 ```
 
 Subtitles keep their language tag (`.en`, `.forced`, etc.) so Plex still recognizes them.
@@ -53,7 +53,7 @@ On a Mac, a network share usually lives under `/Volumes/<ShareName>/...`.
 | `--organize "Z:\TV Shows"` | Also move files into `Show (Year)/Season 02/` folders |
 | `--tvdb-id-folder` | With `--organize`, name folders like `Show (2005) {tvdb-73244}` so Plex matches exactly |
 | `--order dvd` | Use DVD episode order instead of aired order |
-| `--no-titles` | Leave out episode titles (`Show (2005) - s02e05.mkv`) |
+| `--no-titles` | Leave out episode titles (`Show (2005) - S02E05.mkv`) |
 | `--no-subtitles` | Leave subtitle files alone |
 | `--no-recursive` | Don't look inside subfolders |
 | `--undo LOGFILE` | Put everything back the way it was |
