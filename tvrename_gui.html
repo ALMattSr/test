@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TV Renamer</title>
+<title>Media Renamer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='6' width='26' height='18' rx='3' fill='%233b6fd8'/%3E%3Crect x='11' y='26' width='10' height='2' rx='1' fill='%233b6fd8'/%3E%3Cpath d='M10 12h12M10 17h8' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 :root {
@@ -305,7 +305,7 @@ body[data-mode="movies"] .tv-only, body[data-mode="tv"] .movie-only { display: n
   <div class="top-inner">
     <div class="brand">
       <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="6" width="26" height="18" rx="3" fill="var(--accent)"/><rect x="11" y="26" width="10" height="2" rx="1" fill="var(--accent)"/><path d="M10 12h12M10 17h8" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
-      <div><h1>TV Renamer</h1><span>Plex-friendly names from TheTVDB</span></div>
+      <div><h1>Media Renamer</h1><span>Plex-friendly names from TheTVDB</span></div>
     </div>
     <div class="seg" role="group" aria-label="What are you renaming?">
       <button type="button" id="modeTv" aria-pressed="true">TV Shows</button>
@@ -321,7 +321,7 @@ body[data-mode="movies"] .tv-only, body[data-mode="tv"] .movie-only { display: n
   <!-- API key -->
   <section class="card hidden" id="keyCard">
     <h2><span class="step">1</span>Connect to TheTVDB</h2>
-    <p class="sub">TV Renamer looks up episode titles on TheTVDB. Paste your API key once and it's remembered on this Mac.
+    <p class="sub">Media Renamer looks up episode titles on TheTVDB. Paste your API key once and it's remembered on this Mac.
       Don't have one? <a href="https://thetvdb.com/api-information" target="_blank" rel="noopener">Get a key here</a>.</p>
     <div class="row">
       <input type="password" id="apiKey" class="grow" placeholder="API key" autocomplete="off">
@@ -398,7 +398,7 @@ async function api(path, body = {}) {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Token": TOKEN },
     body: JSON.stringify(body),
-  }).catch(() => { throw new Error("TV Renamer isn't running. Start it again from the Terminal or the launcher."); });
+  }).catch(() => { throw new Error("Media Renamer isn't running. Start it again from the Terminal or the launcher."); });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { const e = new Error(data.error || "Something went wrong."); e.code = data.code; throw e; }
   return data;
@@ -526,7 +526,7 @@ function renderScan(r) {
   if (!r.groups.length) {
     area.append(el("section", { class: "card empty" },
       el("b", {}, r.total ? "No episode numbers found." : "No video files found in this folder."),
-      el("div", {}, r.total ? "TV Renamer needs names with S01E02 or 1x02 in them." : "Check that you picked the right folder.")));
+      el("div", {}, r.total ? "Media Renamer needs names with S01E02 or 1x02 in them." : "Check that you picked the right folder.")));
     return;
   }
   r.groups.forEach((g, i) => area.append(showCard(g, i, r.groups.length)));
@@ -997,7 +997,7 @@ async function undoLog(log, btn) {
 $("quitBtn").onclick = async () => {
   try { await api("/api/quit"); } catch (e) {}
   document.body.replaceChildren(el("main", {}, el("section", { class: "card empty", style: "margin-top:40px" },
-    el("b", {}, "TV Renamer has stopped."), el("div", {}, "You can close this tab. Double-click the launcher to start it again."))));
+    el("b", {}, "Media Renamer has stopped."), el("div", {}, "You can close this tab. Double-click the launcher to start it again."))));
 };
 
 init();

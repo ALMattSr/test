@@ -2,7 +2,7 @@
 """
 tvrename_gui.py - a friendly browser window for tvrename.
 
-Run it (or double-click "TV Renamer.command" on a Mac) and a page opens in your
+Run it (or double-click "Media Renamer.command" on a Mac) and a page opens in your
 web browser. Everything runs on your own computer; the only thing that goes out
 to the internet is the lookups to TheTVDB.
 
@@ -599,7 +599,7 @@ class Handler(BaseHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         if path in {"/", "/index.html"}:
             if f"t={TOKEN}" not in query:
-                self._send(403, b"Open TV Renamer from the link shown in the Terminal window.",
+                self._send(403, b"Open Media Renamer from the link shown in the Terminal window.",
                            "text/plain; charset=utf-8")
                 return
             html = PAGE.read_text(encoding="utf-8").replace("__TOKEN__", TOKEN)
@@ -631,7 +631,7 @@ def main(argv: list[str] | None = None) -> int:
     port = int(argv[0]) if argv and argv[0].isdigit() else 0
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{server.server_address[1]}/?t={TOKEN}"
-    print("TV Renamer is running.")
+    print("Media Renamer is running.")
     print(f"If your browser didn't open, paste this link into it:\n  {url}")
     print("To stop it, click Quit in the page or close this window.")
     if "--no-browser" not in argv:

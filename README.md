@@ -1,4 +1,4 @@
-# TV Renamer - Plex-friendly names for TV shows and movies (powered by TheTVDB)
+# Media Renamer - Plex-friendly names for TV shows and movies (powered by TheTVDB)
 
 Point it at a folder of TV episodes. For each file it:
 
@@ -38,17 +38,17 @@ To stay safe on a shared drive, it only renames:
 It never merges two folders. If `Season 02` already exists next to `Season 2`, it leaves both alone and tells you.
 Use `--no-folders` to rename files only, or `--no-season-padding` for `Season 1` instead of `Season 01`.
 
-## Easiest way: the TV Renamer app (opens in your browser)
+## Easiest way: the Media Renamer app (opens in your browser)
 
 No Terminal typing needed once it's set up.
 
-1. Put these files together in one folder on your Mac (for example `Documents/TV Renamer`):
-   `tvrename.py`, `movierename.py`, `tvrename_gui.py`, `tvrename_gui.html` and `TV Renamer.command`.
+1. Put these files together in one folder on your Mac (for example `Documents/Media Renamer`):
+   `tvrename.py`, `movierename.py`, `tvrename_gui.py`, `tvrename_gui.html` and `Media Renamer.command`.
    (Easiest: download the ZIP of this branch from GitHub and unzip it.)
-2. Double-click **TV Renamer.command**. A Terminal window opens (leave it open) and the app opens in your browser.
+2. Double-click **Media Renamer.command**. A Terminal window opens (leave it open) and the app opens in your browser.
    - The first time, macOS may block it. Right-click the file, choose **Open**, then **Open** again.
    - If it says "permission denied", run this once in Terminal, then double-click again:
-     `chmod +x ~/Documents/"TV Renamer"/"TV Renamer.command"`
+     `chmod +x ~/Documents/"Media Renamer"/"Media Renamer.command"`
 3. Paste your TheTVDB API key the first time (it's remembered).
 4. Click **Choose folder…**, pick a show's folder on your network drive, and pick the right show.
 5. Review the list. Untick anything you don't want, click a new name to change it, then press **Rename**.

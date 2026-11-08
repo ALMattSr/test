@@ -1,5 +1,5 @@
 """
-movierename.py - the movie side of TV Renamer.
+movierename.py - the movie side of Media Renamer.
 
 Turns messy movie downloads into Plex's movie layout:
 

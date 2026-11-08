@@ -1,5 +1,5 @@
 #!/bin/bash
-# Double-click this file on a Mac to open TV Renamer in your web browser.
+# Double-click this file on a Mac to open Media Renamer in your web browser.
 cd "$(dirname "$0")" || exit 1
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 if ! command -v python3 >/dev/null 2>&1; then

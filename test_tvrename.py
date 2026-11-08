@@ -381,7 +381,7 @@ class GuiApiTests(unittest.TestCase):
                 urllib.request.urlopen(url + "/", timeout=5)
             self.assertEqual(cm.exception.code, 403)
             with urllib.request.urlopen(f"{url}/?t={self.gui.TOKEN}", timeout=5) as resp:
-                self.assertIn(b"TV Renamer", resp.read())
+                self.assertIn(b"Media Renamer", resp.read())
         finally:
             server.shutdown()
 
