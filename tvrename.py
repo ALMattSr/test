@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import difflib
 import json
 import os
 import re
@@ -466,6 +467,130 @@ def choose_series(tvdb: TVDB, guess: str, year: int | None, sample_files: list[P
 # --------------------------------------------------------------------------- #
 # Main workflow
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# Folder renaming (show folder + season folders)
+# --------------------------------------------------------------------------- #
+SUBTITLE_DIR_NAMES = {"subs", "subtitles", "subtitle", "sub"}
+SEASON_TOKEN_RE = re.compile(r"(?<![a-z0-9])(?:season|series|s)[ ._-]*(\d{1,3})(?!\d)", re.IGNORECASE)
+
+
+def season_folder_name(season: int, pad: bool = True) -> str:
+    if season == 0:
+        return "Specials"
+    return f"Season {season:02d}" if pad else f"Season {season}"
+
+
+def _norm(text: str) -> str:
+    text = split_year(clean_name(text))[0]
+    text = re.sub(r"\([^)]*\)", "", text)
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def has_episode_number(name: str) -> bool:
+    return any(p.search(name) for p in EPISODE_PATTERNS)
+
+
+def folder_matches_show(folder_name: str, show_names: list[str]) -> bool:
+    """Does this folder name look like it belongs to the show? (Guards against renaming 'TV'.)"""
+    folder = _norm(folder_name)
+    if len(folder) < 3:
+        return False
+    for name in show_names:
+        name = _norm(name)
+        if len(name) < 3:
+            continue
+        if name in folder or (folder in name and len(folder) >= 4):
+            return True
+        if difflib.SequenceMatcher(None, folder, name).ratio() >= 0.8:
+            return True
+    return False
+
+
+def looks_like_season_folder(name: str, season: int) -> bool:
+    if has_episode_number(name):
+        return False  # e.g. a per-episode folder "Show.S01E01.1080p"
+    cleaned = clean_name(name)
+    if season == 0 and re.fullmatch(r"specials?|season[ ._-]*0+", cleaned, re.IGNORECASE):
+        return True
+    m = SEASON_TOKEN_RE.search(cleaned)
+    return bool(m and int(m.group(1)) == season)
+
+
+@dataclass
+class FolderRename:
+    old: Path
+    new: Path
+    kind: str  # "season" or "show"
+
+
+def plan_folder_renames(items: list[ParsedFile], all_parsed: list[ParsedFile], series: dict,
+                        root: Path, show_label_text: str, pad_seasons: bool = True,
+                        ) -> tuple[list[FolderRename], list[str]]:
+    """Work out which season folders and show folder to rename for one show.
+
+    Returns (renames, notes). Season folders come first so their parent path
+    stays valid until the show folder itself is renamed.
+    """
+    mine = {id(pf) for pf in items}
+    show_names = [series["name"], items[0].show_guess]
+    notes: list[str] = []
+
+    def files_under(d: Path) -> list[ParsedFile]:
+        return [pf for pf in all_parsed if d in pf.path.parents]
+
+    def only_this_show(d: Path) -> bool:
+        return all(id(pf) in mine for pf in files_under(d))
+
+    dirs = set()
+    for pf in items:
+        d = pf.path.parent
+        if d.name.lower() in SUBTITLE_DIR_NAMES:
+            d = d.parent
+        dirs.add(d)
+
+    season_dirs: dict[Path, int] = {}
+    show_candidates: set[Path] = set()
+    for d in dirs:
+        seasons = {pf.season for pf in files_under(d)}
+        if len(seasons) == 1 and only_this_show(d) and looks_like_season_folder(d.name, next(iter(seasons))):
+            season_dirs[d] = next(iter(seasons))
+            show_candidates.add(d.parent)
+        else:
+            show_candidates.add(d)
+
+    def eligible_show_dir(d: Path) -> bool:
+        return (
+            (d == root or root in d.parents)
+            and not os.path.ismount(d)
+            and not has_episode_number(d.name)
+            and folder_matches_show(d.name, show_names)
+            and only_this_show(d)
+        )
+
+    renames: list[FolderRename] = []
+    for d, season in sorted(season_dirs.items(), key=lambda kv: str(kv[0])):
+        if not folder_matches_show(d.parent.name, show_names):
+            notes.append(f"Left \"{d.name}\" alone: its parent folder \"{d.parent.name}\" "
+                         f"isn't the show's folder (use --organize to build one).")
+            continue
+        new = d.with_name(season_folder_name(season, pad_seasons))
+        if new.name != d.name:
+            renames.append(FolderRename(d, new, "season"))
+
+    for d in sorted(show_candidates, key=str):
+        if d in season_dirs:
+            continue
+        if not eligible_show_dir(d):
+            if d == root or root in d.parents:
+                notes.append(f"Left folder \"{d.name}\" alone: it doesn't look like it holds only "
+                             f"this show.")
+            continue
+        new = d.with_name(show_label_text)
+        if new.name != d.name:
+            renames.append(FolderRename(d, new, "show"))
+    return renames, notes
+
+
 def find_files(root: Path, recursive: bool, include_subs: bool) -> list[Path]:
     exts = VIDEO_EXTS | (SUBTITLE_EXTS if include_subs else set())
     if root.is_file():
@@ -488,9 +613,9 @@ def same_file(a: Path, b: Path) -> bool:
         return False
 
 
-def write_log(log_path: Path, old: Path, new: Path) -> None:
+def write_log(log_path: Path, old: Path, new: Path, kind: str = "file") -> None:
     with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"old": str(old), "new": str(new),
+        f.write(json.dumps({"old": str(old), "new": str(new), "kind": kind,
                             "time": _dt.datetime.now().isoformat(timespec="seconds")}) + "\n")
 
 
@@ -506,7 +631,8 @@ def undo(log_path: Path, dry_run: bool) -> int:
         if old.exists():
             print(f"  original name already in use, skipped: {old}")
             continue
-        print(f"  {new.name}  ->  {old.name}")
+        label = "folder " if e.get("kind") in {"season", "show"} else ""
+        print(f"  {label}{new.name}  ->  {old.name}")
         if not dry_run:
             old.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(new), str(old))
@@ -565,7 +691,7 @@ def run(args) -> int:
         f"tvrename-log-{_dt.datetime.now():%Y%m%d-%H%M%S}.jsonl"
     dest_root = Path(args.organize).expanduser() if args.organize else None
 
-    renamed = skipped = 0
+    renamed = skipped = folders_renamed = 0
     rename_all = args.yes
     for _, items in groups.items():
         first = items[0]
@@ -630,7 +756,7 @@ def run(args) -> int:
                         break
                 if answer == "q":
                     print("\nStopped early.")
-                    return summary(renamed, skipped, log_path)
+                    return summary(renamed, skipped, log_path, folders_renamed)
                 if answer == "n":
                     skipped += 1
                     continue
@@ -668,15 +794,68 @@ def run(args) -> int:
             renamed += 1
             print("   Renamed.")
 
-    return summary(renamed, skipped, log_path)
+        if dest_root or args.no_folders or not root.is_dir():
+            continue
+        result = rename_show_folders(args, items, parsed, series, root, log_path, rename_all)
+        folders_renamed += result[0]
+        log_path, root = result[1], result[2]
+        if result[3]:
+            print("\nStopped early.")
+            return summary(renamed, skipped, log_path, folders_renamed)
+
+    return summary(renamed, skipped, log_path, folders_renamed)
 
 
-def summary(renamed: int, skipped: int, log_path: Path) -> int:
+def rename_show_folders(args, items, parsed, series, root, log_path, rename_all):
+    """Rename this show's season folders and show folder. Returns (count, log_path, root, quit)."""
+    label = show_label(series, not args.no_year, args.tvdb_id_folder)
+    plans, notes = plan_folder_renames(items, parsed, series, root, label,
+                                       pad_seasons=not args.no_season_padding)
+    for note in notes:
+        print(f"   Note: {note}")
+    count = 0
+    for plan in plans:
+        what = "Season folder" if plan.kind == "season" else "Show folder"
+        print()
+        print(f"{what}: {plan.old.name}")
+        print(f"   -> {plan.new.name}")
+        if plan.new.exists() and not same_file(plan.new, plan.old):
+            print("   ! A folder with that name already exists (not merging). Skipped.")
+            continue
+        if args.dry_run:
+            print("   (dry run - not renamed)")
+            continue
+        if not rename_all:
+            while True:
+                answer = ask("   Rename folder? [Y]es / [n]o / [q]uit:", "y")
+                if answer in {"y", "n", "q"}:
+                    break
+            if answer == "q":
+                return count, log_path, root, True
+            if answer == "n":
+                continue
+        try:
+            plan.old.rename(plan.new)
+        except OSError as e:
+            print(f"   ! Folder rename failed: {e}")
+            continue
+        # The undo log (and the folder we were pointed at) may live inside this folder.
+        if plan.old == log_path.parent or plan.old in log_path.parents:
+            log_path = plan.new / log_path.relative_to(plan.old)
+        if plan.old == root or plan.old in root.parents:
+            root = plan.new / root.relative_to(plan.old)
+        write_log(log_path, plan.old, plan.new, plan.kind)
+        count += 1
+        print("   Renamed.")
+    return count, log_path, root, False
+
+
+def summary(renamed: int, skipped: int, log_path: Path, folders: int = 0) -> int:
     print()
-    print(f"Done. Renamed {renamed}, skipped {skipped}.")
-    if renamed:
+    print(f"Done. Renamed {renamed} file(s) and {folders} folder(s), skipped {skipped}.")
+    if renamed or folders:
         print(f"Undo log: {log_path}")
-        print(f"To undo: python3 {Path(sys.argv[0]).name} --undo \"{log_path}\"")
+        print(f"To undo: python3 \"{Path(__file__).resolve()}\" --undo \"{log_path}\"")
     return 0
 
 
@@ -700,6 +879,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="also move files into TV_ROOT/Show (Year)/Season XX/")
     p.add_argument("--tvdb-id-folder", action="store_true",
                    help="with --organize, add {tvdb-12345} to show folder names (helps Plex match)")
+    p.add_argument("--no-folders", action="store_true",
+                   help="don't rename the show folder or season folders")
+    p.add_argument("--no-season-padding", action="store_true",
+                   help="name season folders 'Season 1' instead of 'Season 01'")
     p.add_argument("--order", default="default", choices=["default", "official", "dvd", "alternate"],
                    help="TheTVDB episode order to use (default: default)")
     p.add_argument("--language", default="eng", help="3-letter language code for titles (default eng)")

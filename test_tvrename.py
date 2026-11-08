@@ -151,7 +151,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_rename_one_at_a_time(self):
         # pick show 1; files come up as: E05 subtitle (y), E05 video (y), E06 video (n)
-        self.run_tool([str(self.root)], ["1", "y", "y", "n"])
+        self.run_tool([str(self.root), "--no-folders"], ["1", "y", "y", "n"])
         self.assertEqual(self.names(), [
             "The Office (US) (2005) - S02E05 - Halloween.en.srt",
             "The Office (US) (2005) - S02E05 - Halloween.mkv",
@@ -166,7 +166,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(self.names(), before)
 
     def test_all_then_undo(self):
-        self.run_tool([str(self.root), "--log", str(self.root / "log.jsonl")], ["1", "a"])
+        self.run_tool([str(self.root), "--no-folders", "--log", str(self.root / "log.jsonl")], ["1", "a"])
         self.assertIn("The Office (US) (2005) - S02E06 - The Fight.mkv", self.names())
         log = [json.loads(l) for l in (self.root / "log.jsonl").read_text().splitlines()]
         self.assertEqual(len(log), 3)
@@ -181,7 +181,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("The Office (US) (2005) - S02E06 - The Fight.mkv", self.names(season))
 
     def test_search_again_and_pick_by_id(self):
-        self.run_tool([str(self.root), "--yes"], ["id 999"])
+        self.run_tool([str(self.root), "--yes", "--no-folders"], ["id 999"])
         self.assertIn("By Id (2000) - S02E05 - Halloween.mkv", self.names())
 
     def test_lowercase_name_upgraded_to_capitals(self):
@@ -203,6 +203,102 @@ class EndToEndTests(unittest.TestCase):
         before = self.names()
         self.run_tool([str(self.root)], ["s"])
         self.assertEqual(self.names(), before)
+
+
+class FolderTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def make(self, *rels):
+        for rel in rels:
+            f = self.root / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("x")
+
+    def run_tool(self, argv, answers):
+        with mock.patch.object(tr, "TVDB", FakeTVDB), \
+             mock.patch("builtins.input", side_effect=list(answers)), \
+             mock.patch("builtins.print"):
+            return tr.main(argv + ["--api-key", "dummy"])
+
+    def tree(self):
+        return sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*")
+                      if not p.name.startswith("tvrename-log") and p.name != "log.jsonl")
+
+    def test_show_and_season_folders_renamed_then_undone(self):
+        self.make("The Office/Season 2/The.Office.S02E05.mkv",
+                  "The Office/S1/The.Office.S01E01.mkv")
+        before = self.tree()
+        log = self.root / "log.jsonl"
+        self.run_tool([str(self.root), "--yes", "--log", str(log)], ["1"])
+        self.assertEqual(self.tree(), [
+            "The Office (US) (2005)",
+            "The Office (US) (2005)/Season 01",
+            "The Office (US) (2005)/Season 01/The Office (US) (2005) - S01E01 - Pilot.mkv",
+            "The Office (US) (2005)/Season 02",
+            "The Office (US) (2005)/Season 02/The Office (US) (2005) - S02E05 - Halloween.mkv",
+        ])
+        self.run_tool(["--undo", str(log)], [])
+        self.assertEqual(self.tree(), before)
+
+    def test_asks_before_each_folder(self):
+        self.make("The Office/Season 2/The.Office.S02E05.mkv")
+        # pick show, rename file: yes, season folder: no, show folder: yes
+        self.run_tool([str(self.root)], ["1", "y", "n", "y"])
+        self.assertTrue((self.root / "The Office (US) (2005)" / "Season 2").is_dir())
+
+    def test_mixed_folder_is_never_renamed(self):
+        # Loose episodes from two shows straight inside "TV" - "TV" must stay "TV".
+        self.make("TV/The.Office.S02E05.mkv", "TV/Other.Show.S01E01.mkv")
+        self.run_tool([str(self.root / "TV"), "--yes"], ["1", "1"])
+        self.assertTrue((self.root / "TV").is_dir())
+        self.assertEqual(len(list(self.root.iterdir())), 1)
+
+    def test_unrelated_folder_name_is_not_renamed(self):
+        self.make("Downloads/The.Office.S02E05.mkv")
+        self.run_tool([str(self.root / "Downloads"), "--yes"], ["1"])
+        self.assertTrue((self.root / "Downloads").is_dir())
+
+    def test_per_episode_folders_left_alone(self):
+        self.make("The Office/The.Office.S02E05.720p/The.Office.S02E05.720p.mkv",
+                  "The Office/The.Office.S02E06.720p/The.Office.S02E06.720p.mkv")
+        self.run_tool([str(self.root), "--yes"], ["1"])
+        self.assertIn("The Office/The.Office.S02E05.720p", self.tree())
+
+    def test_pointed_at_season_folder(self):
+        self.make("The Office/Season 2/The.Office.S02E05.mkv")
+        self.run_tool([str(self.root / "The Office" / "Season 2"), "--yes"], ["1"])
+        # Season folder renamed; the show folder above it was not scanned, so it's left alone.
+        self.assertTrue((self.root / "The Office" / "Season 02").is_dir())
+        logs = list((self.root / "The Office" / "Season 02").glob("tvrename-log-*.jsonl"))
+        self.assertEqual(len(logs), 1)
+
+    def test_no_padding_and_specials(self):
+        self.make("The Office/Season 2/The.Office.S02E05.mkv",
+                  "The Office/Specials/The.Office.S00E01.mkv")
+        with mock.patch.object(FakeTVDB, "get_episodes",
+                               return_value={(2, 5): {"name": "Halloween"}, (0, 1): {"name": "Extra"}}):
+            self.run_tool([str(self.root), "--yes", "--no-season-padding"], ["1"])
+        show = self.root / "The Office (US) (2005)"
+        self.assertTrue((show / "Season 2").is_dir())
+        self.assertTrue((show / "Specials").is_dir())
+
+    def test_existing_target_folder_not_merged(self):
+        self.make("The Office/Season 2/The.Office.S02E05.mkv",
+                  "The Office/Season 02/keep.txt")
+        self.run_tool([str(self.root), "--yes"], ["1"])
+        show = self.root / "The Office (US) (2005)"
+        self.assertTrue((show / "Season 2").is_dir())
+        self.assertEqual(sorted(p.name for p in (show / "Season 02").iterdir()), ["keep.txt"])
+
+    def test_no_folders_flag(self):
+        self.make("The Office/Season 2/The.Office.S02E05.mkv")
+        self.run_tool([str(self.root), "--yes", "--no-folders"], ["1"])
+        self.assertTrue((self.root / "The Office" / "Season 2").is_dir())
 
 
 class ApiClientTests(unittest.TestCase):

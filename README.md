@@ -16,6 +16,27 @@ The.Office.S02E05.720p.HDTV.en.srt     ->   The Office (US) (2005) - S02E05 - Ha
 ```
 
 Subtitles keep their language tag (`.en`, `.forced`, etc.) so Plex still recognizes them.
+File extensions are never changed: `.mkv` stays `.mkv`, `.avi` stays `.avi`.
+
+### Folders get renamed too
+
+After a show's episodes are done, the tool renames its folders (asking first, like it does for files):
+
+```
+Ray Donovan/                    ->   Ray Donovan (2013)/
+    Season 1/                   ->       Season 01/
+    Season 2/                   ->       Season 02/
+    Specials/                   ->       Specials/
+```
+
+To stay safe on a shared drive, it only renames:
+- a **show folder** whose name already resembles the show and that holds only that show's episodes
+  (so a folder like `TV` or `Downloads` full of different shows is never renamed), and
+- a **season folder** whose name mentions the season (`Season 1`, `S1`, `Ray.Donovan.S01.1080p`)
+  and whose episodes are all from that season.
+
+It never merges two folders. If `Season 02` already exists next to `Season 2`, it leaves both alone and tells you.
+Use `--no-folders` to rename files only, or `--no-season-padding` for `Season 1` instead of `Season 01`.
 
 ## Setup (one time)
 
@@ -55,12 +76,15 @@ On a Mac, a network share usually lives under `/Volumes/<ShareName>/...`.
 | `--order dvd` | Use DVD episode order instead of aired order |
 | `--no-titles` | Leave out episode titles (`Show (2005) - S02E05.mkv`) |
 | `--no-subtitles` | Leave subtitle files alone |
+| `--no-folders` | Don't rename the show folder or season folders |
+| `--no-season-padding` | Name season folders `Season 1` instead of `Season 01` |
 | `--no-recursive` | Don't look inside subfolders |
 | `--undo LOGFILE` | Put everything back the way it was |
 
 ### Undo
 
-Every run writes a log (`tvrename-log-<date>.jsonl`) in the folder you processed. To reverse a run:
+Every run writes a log (`tvrename-log-<date>.jsonl`) in the folder you processed (if that folder gets
+renamed, the log moves with it). Undo reverses file *and* folder renames. To reverse a run:
 
 ```
 python3 tvrename.py --undo "Z:\TV Shows\The Office\tvrename-log-20261108-101500.jsonl"
