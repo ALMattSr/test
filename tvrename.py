@@ -343,6 +343,27 @@ def build_new_name(series: dict, pf: ParsedFile, titles: list[str],
     return safe_filename(" - ".join(parts)) + pf.ext
 
 
+def keep_original_extension(target: Path, pf: ParsedFile) -> Path:
+    """Make sure the new name ends with the original file's exact extension.
+
+    .mkv stays .mkv, .AVI stays .AVI, and subtitles keep their language tags
+    (.en.srt). If a typed name ends in a different media extension (for example
+    'Name.mp4' for an .mkv file), that wrong extension is replaced, not stacked.
+    """
+    original = pf.path.suffix
+    name = target.name
+    if name.endswith(pf.ext) or (not pf.is_subtitle and name.endswith(original)):
+        return target
+    lowered = name.lower()
+    for ext in sorted(VIDEO_EXTS | SUBTITLE_EXTS, key=len, reverse=True):
+        if lowered.endswith(ext):
+            name = name[: -len(ext)]
+            break
+    if pf.is_subtitle and pf.ext != original and name.lower().endswith(pf.ext[: -len(original)].lower()):
+        name = name[: -(len(pf.ext) - len(original))]  # drop language tags typed by hand
+    return target.with_name(name.rstrip(". ") + pf.ext)
+
+
 # --------------------------------------------------------------------------- #
 # Config / API key
 # --------------------------------------------------------------------------- #
@@ -618,13 +639,20 @@ def run(args) -> int:
                 if answer == "e":
                     edited = input(f"   New name [{target.name}]: ").strip()
                     if edited:
-                        if not edited.lower().endswith(pf.path.suffix.lower()):
-                            edited += pf.ext
                         target = target.with_name(safe_filename(edited))
-                        if target.exists():
+                        target = keep_original_extension(target, pf)
+                        if target.exists() and not same_file(target, pf.path):
                             print("   ! That name already exists. Skipped.")
                             skipped += 1
                             continue
+
+            # Final safety net: never let the file's extension change.
+            target = keep_original_extension(target, pf)
+            if target.suffix != pf.path.suffix:
+                print(f"   ! Refusing to rename: extension would change from "
+                      f"{pf.path.suffix} to {target.suffix}. Skipped.")
+                skipped += 1
+                continue
 
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)

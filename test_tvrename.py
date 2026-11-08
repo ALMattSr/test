@@ -73,6 +73,38 @@ class NamingTests(unittest.TestCase):
                          "The Office (US) (2005) - S01E01-E02 - Pilot.mkv")
 
 
+class ExtensionTests(unittest.TestCase):
+    series = {"id": 1, "name": "American Restoration", "year": 2010}
+
+    def test_every_extension_is_kept_exactly(self):
+        exts = sorted(tr.VIDEO_EXTS | tr.SUBTITLE_EXTS)
+        exts += [e.upper() for e in exts] + [".Mkv"]
+        titles = ["Plain", "Mr. Rogers' Pinball", "Part 1...", "Version 2.0", "Ends With.mp4"]
+        for ext in exts:
+            for title in titles:
+                original = Path(f"American.Restoration.S01E01.720p{ext}")
+                pf = tr.parse_file(original)
+                new = tr.build_new_name(self.series, pf, [title])
+                self.assertTrue(new.endswith(ext), f"{original.name} -> {new}")
+                self.assertEqual(Path(new).suffix, ext, f"{original.name} -> {new}")
+
+    def fix(self, original, typed):
+        pf = tr.parse_file(Path(original))
+        return tr.keep_original_extension(Path(typed), pf).name
+
+    def test_typed_name_without_extension(self):
+        self.assertEqual(self.fix("Show.S01E01.avi", "My Name"), "My Name.avi")
+
+    def test_typed_name_with_wrong_extension_is_replaced(self):
+        self.assertEqual(self.fix("Show.S01E01.mkv", "My Name.mp4"), "My Name.mkv")
+        self.assertEqual(self.fix("Show.S01E01.MKV", "My Name.mkv"), "My Name.MKV")
+
+    def test_typed_subtitle_keeps_language_tag(self):
+        self.assertEqual(self.fix("Show.S01E01.en.srt", "My Name"), "My Name.en.srt")
+        self.assertEqual(self.fix("Show.S01E01.en.srt", "My Name.srt"), "My Name.en.srt")
+        self.assertEqual(self.fix("Show.S01E01.en.srt", "My Name.en.srt"), "My Name.en.srt")
+
+
 class FakeTVDB:
     def __init__(self, *a, **k):
         pass
@@ -158,6 +190,14 @@ class EndToEndTests(unittest.TestCase):
         self.run_tool([str(old), "--yes", "--show", "The Office"], ["1"])
         self.assertIn("The Office (US) (2005) - S01E01 - Pilot.mkv", self.names())
         self.assertNotIn(old.name, self.names())
+
+    def test_edit_with_wrong_extension_keeps_original(self):
+        # pick show, then for each file: edit and type a name ending in .mp4
+        self.run_tool([str(self.show / "The.Office.S02E06.720p.mkv")],
+                      ["1", "e", "Custom Name.mp4"])
+        self.assertIn("Custom Name.mkv", self.names())
+        self.assertNotIn("Custom Name.mp4", self.names())
+        self.assertNotIn("Custom Name.mp4.mkv", self.names())
 
     def test_skip_show(self):
         before = self.names()
