@@ -233,7 +233,63 @@ dialog h3 { margin: 0 0 6px; font-size: 16px; }
 pre.out { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; font-size: 12.5px;
   max-height: 240px; overflow: auto; white-space: pre-wrap; margin: 12px 0 0; }
 
+/* ---------- mode switch ---------- */
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 9px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; height: 30px; padding: 0 14px; border-radius: 6px;
+  cursor: pointer; font-size: 14px; font-weight: 550; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+body[data-mode="movies"] .tv-only, body[data-mode="tv"] .movie-only { display: none !important; }
+
+/* ---------- movies ---------- */
+.movie {
+  display: grid; grid-template-columns: 28px 56px minmax(0, 1fr); gap: 14px;
+  padding: 14px; border-top: 1px solid var(--border); align-items: start;
+}
+.movie:first-child { border-top: 0; }
+.movie > input[type=checkbox] { margin-top: 30px; }
+.movie .poster { width: 56px; height: 82px; font-size: 16px; }
+.movie.off:not(.nomatch) .body { opacity: .55; }
+.movie.nomatch .match b { color: var(--muted); }
+.movie .from { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.movie .match { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 2px 0 8px; }
+.movie .match b { font-size: 15px; }
+.movie .label-input { width: 100%; height: 36px; font-weight: 550; }
+.badge.sure { background: var(--ok-soft); color: var(--ok); }
+.badge.chosen { background: var(--accent-soft); color: var(--accent); }
+.badge.check, .badge.nomatch { background: var(--warn-soft); color: var(--warn); }
+.changes { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12.5px; color: var(--muted); display: grid; gap: 3px; }
+.changes li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; overflow-wrap: anywhere; }
+.changes .kind-icon { margin: 0; }
+.changes s { opacity: .75; }
+.change-panel { margin-top: 10px; padding: 12px; border-radius: 8px; background: var(--surface-2); }
+.change-panel .opts-list { display: grid; gap: 6px; margin-top: 10px; }
+.change-panel .opt { text-align: left; display: flex; gap: 10px; align-items: center; padding: 8px 10px;
+  border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 14px; }
+.change-panel .opt:hover { border-color: var(--accent); }
+.change-panel .opt img, .change-panel .opt .poster { width: 28px; height: 40px; font-size: 11px; border-radius: 4px; flex: none; object-fit: cover; }
+.progress { height: 4px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin: 4px 0 14px; }
+.progress div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+
+/* ---------- clean-up ---------- */
+.btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn.danger:hover { filter: brightness(1.08); background: var(--bad); }
+.extra { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 12px; align-items: center;
+  padding: 8px 14px; border-top: 1px solid var(--border); font-size: 13.5px; }
+.extra:first-child { border-top: 0; }
+.extra .size { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+.extra .badge { background: var(--surface-2); color: var(--muted); }
+.extra .badge.careful { background: var(--warn-soft); color: var(--warn); }
+.extra.off span:first-of-type { opacity: .55; }
+.warn-note { display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px; background: var(--bad-soft);
+  color: var(--bad); font-size: 13.5px; margin: 0 0 14px; }
+
 @media (max-width: 640px) {
+  .extra { grid-template-columns: 26px minmax(0, 1fr); }
+  .extra .badge, .extra .size { grid-column: 2; justify-self: start; }
+  .movie { grid-template-columns: 26px minmax(0, 1fr); }
+  .movie .poster { display: none; }
+  .seg button { padding: 0 10px; }
   .top-inner, main { padding: 0 16px; }
   main { padding-top: 20px; }
   .card { padding: 18px 16px; }
@@ -244,12 +300,16 @@ pre.out { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; 
 }
 </style>
 </head>
-<body>
+<body data-mode="tv">
 <header class="top">
   <div class="top-inner">
     <div class="brand">
       <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="6" width="26" height="18" rx="3" fill="var(--accent)"/><rect x="11" y="26" width="10" height="2" rx="1" fill="var(--accent)"/><path d="M10 12h12M10 17h8" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
       <div><h1>TV Renamer</h1><span>Plex-friendly names from TheTVDB</span></div>
+    </div>
+    <div class="seg" role="group" aria-label="What are you renaming?">
+      <button type="button" id="modeTv" aria-pressed="true">TV Shows</button>
+      <button type="button" id="modeMovies" aria-pressed="false">Movies</button>
     </div>
     <button class="btn ghost small" id="undoBtn" title="Put a previous run back the way it was">Undo a run</button>
     <button class="btn ghost small" id="keyBtn" title="Change your TheTVDB API key">API key</button>
@@ -272,8 +332,9 @@ pre.out { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; 
 
   <!-- Folder -->
   <section class="card" id="folderCard">
-    <h2><span class="step" id="folderStep">1</span>Choose a show's folder</h2>
-    <p class="sub">Pick the folder that holds one show (for example <i>Ray Donovan</i>). Nothing changes until you review and press Rename.</p>
+    <h2><span class="step" id="folderStep">1</span><span class="tv-only">Choose a show's folder</span><span class="movie-only">Choose your movies folder</span></h2>
+    <p class="sub tv-only">Pick the folder that holds one show (for example <i>Ray Donovan</i>). Nothing changes until you review and press Rename.</p>
+    <p class="sub movie-only">Pick a folder with one or more movies in it (for example your <i>Movies</i> folder). Nothing changes until you review and press Rename.</p>
     <div class="row">
       <input type="text" id="path" class="grow" placeholder="/Volumes/data/tv/Ray Donovan" spellcheck="false">
       <button class="btn" id="browse">Choose folder…</button>
@@ -282,13 +343,14 @@ pre.out { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; 
     <details class="options">
       <summary>Naming options</summary>
       <div class="opts">
-        <label><input type="checkbox" id="optTitles" checked><span>Include episode titles<small>Show (2013) - S01E01 - Title.mkv</small></span></label>
-        <label><input type="checkbox" id="optYear" checked><span>Include the year<small>Ray Donovan (2013)</small></span></label>
-        <label><input type="checkbox" id="optFolders" checked><span>Rename show &amp; season folders<small>Season 1 → Season 01</small></span></label>
-        <label><input type="checkbox" id="optPad" checked><span>Two-digit season folders<small>"Season 01" instead of "Season 1"</small></span></label>
+        <label class="tv-only"><input type="checkbox" id="optTitles" checked><span>Include episode titles<small>Show (2013) - S01E01 - Title.mkv</small></span></label>
+        <label class="tv-only"><input type="checkbox" id="optYear" checked><span>Include the year<small>Ray Donovan (2013)</small></span></label>
+        <label class="tv-only"><input type="checkbox" id="optFolders" checked><span>Rename show &amp; season folders<small>Season 1 → Season 01</small></span></label>
+        <label class="tv-only"><input type="checkbox" id="optPad" checked><span>Two-digit season folders<small>"Season 01" instead of "Season 1"</small></span></label>
         <label><input type="checkbox" id="optSubs" checked><span>Rename subtitle files too<small>Keeps language tags like .en.srt</small></span></label>
-        <label><input type="checkbox" id="optTvdbId"><span>Add TheTVDB id to show folder<small>Ray Donovan (2013) {tvdb-259866}</small></span></label>
-        <label style="align-items:center"><span style="flex:none">Episode order</span>
+        <label class="tv-only"><input type="checkbox" id="optTvdbId"><span>Add TheTVDB id to show folder<small>Ray Donovan (2013) {tvdb-259866}</small></span></label>
+        <label class="movie-only"><input type="checkbox" id="optOwnFolders" checked><span>Give every movie its own folder<small>Loose files go into "Movie Name (Year)" folders, like Plex prefers</small></span></label>
+        <label class="tv-only" style="align-items:center"><span style="flex:none">Episode order</span>
           <select id="optOrder" style="height:34px">
             <option value="default">Aired (default)</option>
             <option value="official">Aired (official)</option>
@@ -315,7 +377,7 @@ pre.out { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; 
 <script>
 const TOKEN = "__TOKEN__";
 const $ = (id) => document.getElementById(id);
-const state = { status: null, scan: null, cards: {} };
+const state = { status: null, scan: null, cards: {}, mode: "tv" };
 
 /* ---------- helpers ---------- */
 function el(tag, attrs = {}, ...kids) {
@@ -356,13 +418,28 @@ function options() {
     no_titles: !$("optTitles").checked, no_year: !$("optYear").checked,
     no_folders: !$("optFolders").checked, no_season_padding: !$("optPad").checked,
     no_subtitles: !$("optSubs").checked, tvdb_id_folder: $("optTvdbId").checked,
-    order: $("optOrder").value,
+    order: $("optOrder").value, own_folders: $("optOwnFolders").checked,
   };
 }
+function setMode(mode, rescan = true) {
+  const changed = state.mode !== mode;
+  state.mode = mode;
+  document.body.dataset.mode = mode;
+  $("modeTv").setAttribute("aria-pressed", mode === "tv");
+  $("modeMovies").setAttribute("aria-pressed", mode === "movies");
+  $("path").placeholder = mode === "movies" ? "/Volumes/data/movies" : "/Volumes/data/tv/Ray Donovan";
+  try { localStorage.setItem("tvrename.mode", mode); } catch (e) {}
+  if (changed && rescan) {
+    $("scanArea").replaceChildren();
+    try { $("path").value = localStorage.getItem("tvrename.path." + mode) || ""; } catch (e) { $("path").value = ""; }
+  }
+}
+$("modeTv").onclick = () => setMode("tv");
+$("modeMovies").onclick = () => setMode("movies");
 function remember() {
   try {
     localStorage.setItem("tvrename.opts", JSON.stringify(options()));
-    localStorage.setItem("tvrename.path", $("path").value);
+    localStorage.setItem("tvrename.path." + state.mode, $("path").value);
   } catch (e) {}
 }
 function restore() {
@@ -373,8 +450,11 @@ function restore() {
       $("optFolders").checked = !o.no_folders; $("optPad").checked = !o.no_season_padding;
       $("optSubs").checked = !o.no_subtitles; $("optTvdbId").checked = !!o.tvdb_id_folder;
       $("optOrder").value = o.order || "default";
+      $("optOwnFolders").checked = o.own_folders !== false;
     }
-    $("path").value = localStorage.getItem("tvrename.path") || "";
+    const mode = localStorage.getItem("tvrename.mode") === "movies" ? "movies" : "tv";
+    setMode(mode, false);
+    $("path").value = localStorage.getItem("tvrename.path." + mode) || localStorage.getItem("tvrename.path") || "";
   } catch (e) {}
 }
 const icons = {
@@ -430,10 +510,12 @@ async function scan(pathOverride) {
   area.replaceChildren(el("div", { class: "card loading" }, el("span", { class: "spinner" }), "Looking through the folder… (network drives can take a moment)"));
   remember();
   try {
-    const r = await api("/api/scan", { path: $("path").value, no_subtitles: !$("optSubs").checked });
+    const r = await api("/api/scan", { path: $("path").value, no_subtitles: !$("optSubs").checked, mode: state.mode });
     state.scan = r; state.cards = {};
     $("path").value = r.root;
-    renderScan(r);
+    remember();
+    if (state.mode === "movies") renderMovies(r); else renderScan(r);
+    area.append(cleanupCard());
   } catch (e) { area.replaceChildren(); toast(e.message, true); }
   finally { busy(btn, false); }
 }
@@ -634,6 +716,249 @@ function renderDone(ctx, r) {
     fails.length ? el("ul", { class: "fail-list" }, fails.map((f) => el("li", {}, `${f.old}: ${f.message}`))) : null,
   ].filter(Boolean));
   $("path").value = r.root; remember();
+  refreshCleanup();
+}
+
+/* ---------- movies ---------- */
+function posterEl(match, fallbackTitle, cls = "poster") {
+  const initials = (match?.name || fallbackTitle || "?").split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase();
+  if (match?.image) {
+    return el("img", { class: cls, src: match.image, alt: "", loading: "lazy",
+      onerror: (e) => e.target.replaceWith(el("div", { class: cls }, initials)) });
+  }
+  return el("div", { class: cls }, initials);
+}
+
+function renderMovies(r) {
+  const area = $("scanArea");
+  area.replaceChildren();
+  if (!r.movies.length) {
+    area.append(el("section", { class: "card empty" }, el("b", {}, "No movies found in this folder."),
+      el("div", {}, "Check that you picked the right folder.")));
+    return;
+  }
+  const n = r.movies.length;
+  const list = el("div", { class: "list" });
+  const bar = el("div", {});
+  const progress = el("div", { class: "progress" }, bar);
+  const status = el("p", { class: "sub", style: "margin:0 0 6px" }, `Looking up ${n} movie${n > 1 ? "s" : ""} on TheTVDB…`);
+  const count = el("span", { class: "count" });
+  const go = el("button", { class: "btn primary", disabled: true }, "Rename");
+  const rows = new Map();   // id -> { data, cb, node }
+
+  const sync = () => {
+    const picked = [...rows.values()].filter((x) => x.cb && x.cb.checked);
+    const check = [...rows.values()].filter((x) => x.data && x.data.confidence === "check" && x.data.status === "ok").length;
+    const none = [...rows.values()].filter((x) => x.data && x.data.status === "nomatch").length;
+    count.replaceChildren(el("b", {}, `${picked.length} of ${n}`), " selected",
+      check ? ` · ${check} to check` : "", none ? ` · ${none} not found` : "");
+    go.textContent = picked.length ? `Rename ${picked.length} movie${picked.length > 1 ? "s" : ""}` : "Nothing selected";
+    go.disabled = !picked.length;
+  };
+  const setAll = (on) => { rows.forEach((x) => { if (x.cb && !x.cb.disabled) { x.cb.checked = on; x.node.classList.toggle("off", !on); } }); sync(); };
+
+  const card = el("section", { class: "card" },
+    el("h2", {}, el("span", { class: "step" }, $("keyCard").classList.contains("hidden") ? 2 : 3), "Check the matches"),
+    status, progress,
+    el("div", { class: "toolbar" }, count,
+      el("button", { class: "linkish", onclick: () => setAll(true) }, "Select all"),
+      el("button", { class: "linkish", onclick: () => setAll(false) }, "Select none"), go),
+    list,
+    el("p", { class: "sub", style: "margin:12px 0 0;font-size:13px" },
+      "Green ones are sure matches. Orange ones need a quick look: tick them once they're right, or click Change. Each file keeps its own extension."));
+  area.append(card);
+
+  r.movies.forEach((m) => {
+    const node = el("div", { class: "movie" }, el("input", { type: "checkbox", disabled: true }), posterEl(null, m.title),
+      el("div", { class: "body" }, el("div", { class: "from" }, m.folder),
+        el("div", { class: "match" }, el("b", {}, m.title + (m.year ? ` (${m.year})` : "")),
+          el("span", { class: "loading", style: "padding:0;font-size:13px" }, el("span", { class: "spinner" }), "Looking up…"))));
+    list.append(node);
+    rows.set(m.id, { node, data: null, cb: null });
+  });
+
+  const update = (data) => {
+    const slot = rows.get(data.id);
+    const fresh = movieRow(data, sync, (newData) => update(newData));
+    slot.node.replaceWith(fresh.node);
+    Object.assign(slot, { node: fresh.node, data, cb: fresh.cb });
+    sync();
+  };
+
+  go.onclick = async () => {
+    const ids = [...rows.entries()].filter(([, x]) => x.cb && x.cb.checked).map(([id]) => id);
+    busy(go, true, "Renaming…");
+    try {
+      const res = await api("/api/movie_apply", { ids });
+      const fails = res.results.filter((x) => !x.ok);
+      card.replaceChildren(
+        el("h2", {}, "Movies renamed"),
+        el("div", { class: "banner" + (res.failed ? " warn" : "") },
+          el("b", {}, res.failed ? `Renamed ${res.renamed}, but ${res.failed} couldn't be finished.` : `Done! Renamed ${res.renamed} movie${res.renamed === 1 ? "" : "s"}.`),
+          res.log ? el("button", { class: "btn small", onclick: () => undoLog(res.log) }, "Undo this") : null,
+          el("button", { class: "btn small primary", onclick: () => scan(res.root) }, "Scan again")),
+        fails.length ? el("ul", { class: "fail-list" }, fails.map((f) => el("li", {}, `${f.title}: ${f.message}`))) : "");
+      $("path").value = res.root; remember();
+      refreshCleanup();
+    } catch (e) { toast(e.message, true); busy(go, false); }
+  };
+
+  // Look movies up a few at a time so the page fills in as answers arrive
+  let done = 0, next = 0;
+  const ids = r.movies.map((m) => m.id);
+  const worker = async () => {
+    while (next < ids.length) {
+      const id = ids[next++];
+      try { update(await api("/api/movie_match", { id, own_folders: $("optOwnFolders").checked })); }
+      catch (e) {
+        if (e.code === "need_key") { showKeyCard(true); toast(e.message, true); return; }
+        const m = r.movies.find((x) => x.id === id);
+        update({ id, title: m.title, year: m.year, folder: m.folder, status: "nomatch", message: e.message, changes: [], candidates: [], confidence: "none", label: "" });
+      }
+      done++;
+      bar.style.width = `${Math.round((done / ids.length) * 100)}%`;
+      status.textContent = done < ids.length ? `Looking up movies on TheTVDB… ${done} of ${ids.length}` : `Looked up ${ids.length} movie${ids.length > 1 ? "s" : ""}. Review them below, then press Rename.`;
+    }
+  };
+  Promise.all([worker(), worker(), worker(), worker()]).then(() => progress.classList.add("hidden"));
+}
+
+function movieRow(d, sync, onChange) {
+  const actionable = d.status === "ok";
+  const preChecked = actionable && (d.confidence === "sure" || d.confidence === "chosen");
+  const cb = el("input", { type: "checkbox", checked: preChecked, disabled: !actionable, "aria-label": `Rename ${d.title}` });
+  const badge = {
+    sure: ["sure", "Matched"], chosen: ["chosen", "Your pick"], check: ["check", "Check this"], none: ["nomatch", "Not found"],
+  }[d.status === "nomatch" ? "none" : d.confidence] || ["check", "Check this"];
+  const statusBadge = d.status === "exists" ? el("span", { class: "badge exists", title: d.message }, "Name taken")
+    : d.status === "same" ? el("span", { class: "badge same" }, "Already named correctly") : null;
+
+  const label = el("input", { type: "text", class: "label-input", value: d.label || "", spellcheck: "false",
+    placeholder: "Type the name, like: Movie Name (2010)", "aria-label": "New name" });
+  // Apply a typed name when you press Enter or click away (not on every keystroke)
+  label.addEventListener("change", async () => {
+    if (!label.value.trim() || label.value === d.label) return;
+    try { onChange(await api("/api/movie_set", { id: d.id, label: label.value })); }
+    catch (e) { toast(e.message, true); }
+  });
+  label.addEventListener("keydown", (e) => { if (e.key === "Enter") label.blur(); });
+
+  const icon = (k) => el("span", { html: k === "subtitle" ? icons.subtitle : k === "file" ? icons.file : icons.folder });
+  const changes = el("ul", { class: "changes" }, (d.changes || []).slice(0, 6).map((c) => el("li", {}, icon(c.kind),
+    el("span", {}, c.kind === "newfolder" ? `New folder: ${c.new}` : [el("s", {}, c.old), "  →  ", c.new]))),
+    (d.changes || []).length > 6 ? el("li", {}, el("span"), `…and ${d.changes.length - 6} more`) : null);
+
+  const panel = el("div", { class: "change-panel hidden" });
+  const openPanel = () => {
+    if (!panel.classList.contains("hidden")) { panel.classList.add("hidden"); return; }
+    const q = el("input", { type: "search", class: "grow", value: d.title + (d.year ? ` ${d.year}` : ""), placeholder: "Movie name, or TheTVDB id" });
+    const results = el("div", { class: "opts-list" });
+    const show = (list) => {
+      results.replaceChildren(...(list.length ? list : []).map((c) => el("button", { class: "opt", type: "button", onclick: async () => {
+        try { onChange(await api("/api/movie_set", { id: d.id, match: c })); } catch (e) { toast(e.message, true); }
+      } }, posterEl(c, c.name), el("span", {}, el("b", {}, c.name), ` (${c.year || "year unknown"})`))));
+      if (!list.length) results.append(el("div", { style: "font-size:13px;color:var(--muted)" }, "No matches. Try fewer words, or type the name in the box above instead."));
+    };
+    const doSearch = async () => {
+      results.replaceChildren(el("div", { class: "loading", style: "padding:4px" }, el("span", { class: "spinner" }), "Searching…"));
+      try { show((await api("/api/movie_search", { query: q.value })).results); }
+      catch (e) { results.replaceChildren(); toast(e.message, true); }
+    };
+    q.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+    panel.replaceChildren(el("div", { class: "row" }, q, el("button", { class: "btn small", onclick: doSearch }, "Search")), results);
+    if (d.candidates && d.candidates.length > 1) show(d.candidates);
+    panel.classList.remove("hidden");
+    q.focus();
+  };
+
+  const matchName = d.match ? `${d.match.name}${d.match.year ? ` (${d.match.year})` : ""}`
+    : d.label || `${d.title}${d.year ? ` (${d.year})` : ""}`;
+  const node = el("div", { class: "movie" + (preChecked ? "" : " off") + (d.status === "nomatch" ? " nomatch" : "") }, cb, posterEl(d.match, d.title),
+    el("div", { class: "body" },
+      el("div", { class: "from" }, d.folder),
+      el("div", { class: "match" }, el("b", {}, matchName), el("span", { class: "badge " + badge[0] }, badge[1]), statusBadge,
+        el("button", { class: "linkish", onclick: openPanel }, "Change")),
+      d.status === "nomatch" ? el("div", { style: "font-size:13px;color:var(--muted);margin-bottom:8px" }, "Not found on TheTVDB. Click Change to search, or type the name below.") : null,
+      label,
+      d.status === "exists" ? el("div", { style: "font-size:12.5px;color:var(--warn);margin-top:6px" }, d.message) : null,
+      changes, panel));
+  cb.addEventListener("change", () => { node.classList.toggle("off", !cb.checked); sync(); });
+  return { node, cb };
+}
+
+/* ---------- clean-up ---------- */
+function formatBytes(n) {
+  if (!n) return "0 KB";
+  const u = ["bytes", "KB", "MB", "GB", "TB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}`;
+}
+
+function cleanupCard() {
+  const card = el("section", { class: "card", id: "cleanupCard" });
+  state.cleanupCard = card;
+  loadCleanup(card);
+  return card;
+}
+function refreshCleanup() { if (state.cleanupCard && document.body.contains(state.cleanupCard)) loadCleanup(state.cleanupCard); }
+
+async function loadCleanup(card) {
+  card.replaceChildren(el("h2", {}, "Clean up extra files"),
+    el("div", { class: "loading" }, el("span", { class: "spinner" }), "Looking for files that aren't videos or subtitles…"));
+  let r;
+  try { r = await api("/api/extras", {}); }
+  catch (e) { card.replaceChildren(el("h2", {}, "Clean up extra files"), el("p", { class: "sub" }, e.message)); return; }
+  if (!r.items.length) {
+    card.replaceChildren(el("h2", {}, "Clean up extra files"),
+      el("p", { class: "sub", style: "margin:0" }, "No extra files here. Only videos and subtitles. Nice and tidy."));
+    return;
+  }
+  const list = el("div", { class: "list" });
+  const checks = [];
+  r.items.forEach((it) => {
+    const cb = el("input", { type: "checkbox", checked: it.default, "aria-label": `Delete ${it.rel}` });
+    const row = el("div", { class: "extra" + (it.default ? "" : " off") }, cb,
+      el("span", { style: "overflow-wrap:anywhere" }, it.rel),
+      el("span", { class: "badge" + (it.default ? "" : " careful") }, it.reason),
+      el("span", { class: "size" }, formatBytes(it.size)));
+    cb.addEventListener("change", () => { row.classList.toggle("off", !cb.checked); sync(); });
+    checks.push({ cb, it });
+    list.append(row);
+  });
+  const count = el("span", { class: "count" });
+  const go = el("button", { class: "btn danger" });
+  const sync = () => {
+    const sel = checks.filter((c) => c.cb.checked);
+    const bytes = sel.reduce((a, c) => a + c.it.size, 0);
+    count.replaceChildren(el("b", {}, `${sel.length} of ${checks.length}`), ` selected · ${formatBytes(bytes)}`);
+    go.textContent = sel.length ? `Delete ${sel.length} file${sel.length > 1 ? "s" : ""}` : "Nothing selected";
+    go.disabled = !sel.length;
+  };
+  const setAll = (on) => { checks.forEach((c) => { c.cb.checked = on; c.cb.closest(".extra").classList.toggle("off", !on); }); sync(); };
+  go.onclick = async () => {
+    const sel = checks.filter((c) => c.cb.checked);
+    const bytes = sel.reduce((a, c) => a + c.it.size, 0);
+    if (!confirm(`Permanently delete ${sel.length} file${sel.length > 1 ? "s" : ""} (${formatBytes(bytes)})?\n\nOn a network drive these usually don't go to the Trash, and Undo can't bring them back.`)) return;
+    busy(go, true, "Deleting…");
+    try {
+      const res = await api("/api/clean", { ids: sel.map((c) => c.it.id) });
+      card.replaceChildren(el("h2", {}, "Clean up extra files"),
+        el("div", { class: "banner" + (res.failed.length ? " warn" : "") },
+          el("b", {}, `Deleted ${res.deleted} file${res.deleted === 1 ? "" : "s"}` +
+            (res.folders ? ` and ${res.folders} empty folder${res.folders === 1 ? "" : "s"}` : "") + `, freeing ${formatBytes(res.freed)}.`),
+          el("button", { class: "btn small", onclick: () => loadCleanup(card) }, "Check again")),
+        res.failed.length ? el("ul", { class: "fail-list" }, res.failed.map((f) => el("li", {}, `${f.name}: ${f.message}`))) : "");
+    } catch (e) { toast(e.message, true); busy(go, false); }
+  };
+  card.replaceChildren(
+    el("h2", {}, "Clean up extra files"),
+    el("p", { class: "sub" }, `Found ${r.items.length} file${r.items.length > 1 ? "s" : ""} that ${r.items.length > 1 ? "aren't" : "isn't a"} video${r.items.length > 1 ? "s" : ""} or subtitle${r.items.length > 1 ? "s" : ""} (${formatBytes(r.total_size)}). Orange ones are unticked on purpose: check them before deleting.`),
+    el("div", { class: "warn-note" }, "Deleting is permanent. On a network drive files usually skip the Trash, and Undo can't bring them back."),
+    el("div", { class: "toolbar" }, count,
+      el("button", { class: "linkish", onclick: () => setAll(true) }, "Select all"),
+      el("button", { class: "linkish", onclick: () => setAll(false) }, "Select none"), go),
+    list);
+  sync();
 }
 
 /* ---------- undo ---------- */

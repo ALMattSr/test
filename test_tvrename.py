@@ -416,3 +416,170 @@ class ApiClientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --------------------------------------------------------------------------- #
+# Movies + clean-up
+# --------------------------------------------------------------------------- #
+import movierename as mr
+
+
+class FakeMovieTVDB(FakeTVDB):
+    DB = [
+        {"id": 169, "name": "The Matrix", "year": 1999, "network": "", "overview": "", "image": ""},
+        {"id": 170, "name": "The Matrix Reloaded", "year": 2003, "network": "", "overview": "", "image": ""},
+        {"id": 300, "name": "Inception", "year": 2010, "network": "", "overview": "", "image": ""},
+        {"id": 400, "name": "Avatar", "year": 2009, "network": "", "overview": "", "image": ""},
+        {"id": 500, "name": "1917", "year": 2019, "network": "", "overview": "", "image": ""},
+    ]
+
+    def search_movies(self, q, year=None):
+        q = mr._norm(q)
+        hits = [m for m in self.DB if q and q in mr._norm(m["name"])]
+        return [m for m in hits if m["year"] == year] if year else hits
+
+    def get_movie(self, mid):
+        return next(m for m in self.DB if m["id"] == mid)
+
+
+class MovieParseTests(unittest.TestCase):
+    def test_titles(self):
+        cases = {
+            "The.Matrix.1999.1080p.BluRay.x264-GRP": ("The Matrix", 1999, None),
+            "Blade.Runner.2049.2017.2160p.UHD": ("Blade Runner 2049", 2017, None),
+            "1917.2019.1080p.WEBRip": ("1917", 2019, None),
+            "Avatar.2009.CD2.XviD": ("Avatar", 2009, 2),
+            "Movie.Name.1080p.BluRay": ("Movie Name", None, None),
+            "Up (2009)": ("Up", 2009, None),
+        }
+        for raw, want in cases.items():
+            self.assertEqual(mr.parse_title(raw), want, raw)
+
+    def test_ranking(self):
+        ranked = mr.rank_matches("The Matrix", 1999, list(reversed(FakeMovieTVDB.DB)))
+        self.assertEqual((ranked[0]["id"], ranked[0]["confidence"]), (169, "sure"))
+        self.assertEqual(mr.rank_matches("Matrix", None, FakeMovieTVDB.DB)[0]["confidence"], "check")
+
+
+class MovieGuiTests(unittest.TestCase):
+    def setUp(self):
+        import tvrename_gui as gui
+        self.gui = gui
+        gui.SESSION = gui.Session()
+        gui.SESSION.tvdb = FakeMovieTVDB()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "Movies"
+        files = {
+            # own release folder, obfuscated file name, subtitles in a Subs folder, junk
+            "The.Matrix.1999.1080p.BluRay.x264-GRP/a8f7e6d5c4b3a2f1.mkv": "video",
+            "The.Matrix.1999.1080p.BluRay.x264-GRP/Subs/2_English.srt": "sub",
+            "The.Matrix.1999.1080p.BluRay.x264-GRP/Subs/3_Spanish.srt": "sub",
+            "The.Matrix.1999.1080p.BluRay.x264-GRP/The.Matrix.1999.nfo": "junk",
+            "The.Matrix.1999.1080p.BluRay.x264-GRP/Sample/sample-matrix.mkv": "junk",
+            # loose files in the Movies folder
+            "Inception.2010.1080p.BrRip.x264.mp4": "video",
+            "Inception.2010.1080p.BrRip.x264.en.srt": "sub",
+            "Avatar.2009.CD1.avi": "video",
+            "Avatar.2009.CD2.avi": "video",
+            "poster.jpg": "art",
+            "Unpack.Me.rar": "archive",
+        }
+        for rel in files:
+            f = self.root / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("x")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def tree(self):
+        return sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*")
+                      if not p.name.startswith("tvrename-"))
+
+    def match_all(self):
+        scan = self.gui.api_scan({"path": str(self.root), "mode": "movies"})
+        return {m["title"]: self.gui.api_movie_match({"id": m["id"]}) for m in scan["movies"]}
+
+    def test_scan_groups_movies_and_subtitles(self):
+        scan = self.gui.api_scan({"path": str(self.root), "mode": "movies"})
+        titles = sorted((m["title"], m["year"], len(m["files"])) for m in scan["movies"])
+        self.assertEqual(titles, [("Avatar", 2009, 2), ("Inception", 2010, 2), ("The Matrix", 1999, 3)])
+
+    def test_rename_then_undo(self):
+        before = self.tree()
+        rows = self.match_all()
+        self.assertEqual({t: r["confidence"] for t, r in rows.items()},
+                         {"Avatar": "sure", "Inception": "sure", "The Matrix": "sure"})
+        done = self.gui.api_movie_apply({"ids": [r["id"] for r in rows.values()]})
+        self.assertEqual(done["failed"], 0, done)
+        after = self.tree()
+        for expected in [
+            "Avatar (2009)/Avatar (2009) - pt1.avi",
+            "Avatar (2009)/Avatar (2009) - pt2.avi",
+            "Inception (2010)/Inception (2010).mp4",
+            "Inception (2010)/Inception (2010).en.srt",
+            "The Matrix (1999)/The Matrix (1999).mkv",
+            "The Matrix (1999)/The Matrix (1999).en.srt",
+            "The Matrix (1999)/The Matrix (1999).es.srt",
+            "The Matrix (1999)/The.Matrix.1999.nfo",       # junk untouched by renaming
+            "poster.jpg",
+        ]:
+            self.assertIn(expected, after)
+        self.assertNotIn("The Matrix (1999)/Subs", after)  # emptied Subs folder tidied away
+        self.gui.api_undo({"log": done["log"]})
+        self.assertEqual(self.tree(), before)
+
+    def test_extensions_kept_with_hand_typed_name(self):
+        rows = self.match_all()
+        mid = rows["Inception"]["id"]
+        row = self.gui.api_movie_set({"id": mid, "label": "My Movie (2010).mkv"})
+        self.assertEqual([c["new"] for c in row["changes"]][1:], ["My Movie (2010).mp4", "My Movie (2010).en.srt"])
+        row = self.gui.api_movie_set({"id": mid, "label": "My Movie (2010)"})
+        self.gui.api_movie_apply({"ids": [mid]})
+        self.assertIn("My Movie (2010)/My Movie (2010).mp4", self.tree())
+
+    def test_choose_different_match(self):
+        rows = self.match_all()
+        mid = rows["The Matrix"]["id"]
+        row = self.gui.api_movie_set({"id": mid, "match": FakeMovieTVDB.DB[1]})
+        self.assertEqual(row["label"], "The Matrix Reloaded (2003)")
+
+    def test_cleanup_lists_and_deletes_only_extras(self):
+        self.gui.api_scan({"path": str(self.root), "mode": "movies"})
+        extras = self.gui.api_extras({})
+        found = {i["rel"]: (i["reason"], i["default"]) for i in extras["items"]}
+        self.assertEqual(found, {
+            "The.Matrix.1999.1080p.BluRay.x264-GRP/Sample/sample-matrix.mkv": ("Sample video", True),
+            "The.Matrix.1999.1080p.BluRay.x264-GRP/The.Matrix.1999.nfo": ("Info file", True),
+            "Unpack.Me.rar": ("Archive (may still hold a video that wasn't unpacked)", False),
+            "poster.jpg": ("Artwork Plex can use", False),
+        })
+        ids = [i["id"] for i in extras["items"] if i["default"]]
+        res = self.gui.api_clean({"ids": ids})
+        self.assertEqual((res["deleted"], res["folders"], res["failed"]), (2, 1, []))
+        tree = self.tree()
+        self.assertNotIn("The.Matrix.1999.1080p.BluRay.x264-GRP/Sample", tree)  # empty folder removed
+        self.assertIn("poster.jpg", tree)
+        self.assertIn("Unpack.Me.rar", tree)
+        self.assertIn("The.Matrix.1999.1080p.BluRay.x264-GRP/a8f7e6d5c4b3a2f1.mkv", tree)
+        self.assertEqual(len(list(self.root.glob("tvrename-cleanup-*.jsonl"))), 1)
+
+    def test_cleanup_refuses_media_files(self):
+        self.gui.api_scan({"path": str(self.root), "mode": "movies"})
+        self.gui.api_extras({})
+        # Someone tampers with the list: a real movie must never be deleted
+        movie = self.root / "Inception.2010.1080p.BrRip.x264.mp4"
+        self.gui.SESSION.extras["x99"] = movie
+        res = self.gui.api_clean({"ids": ["x99"]})
+        self.assertEqual(res["deleted"], 0)
+        self.assertTrue(movie.exists())
+
+    def test_tv_cleanup_too(self):
+        show = Path(self.tmp.name) / "Show"
+        (show / "Season 1").mkdir(parents=True)
+        (show / "Season 1" / "Show.S01E01.mkv").write_text("x")
+        (show / "Season 1" / "Show.S01E01.nfo").write_text("x")
+        (show / "Season 1" / "Show.S01E01.en.srt").write_text("x")
+        self.gui.api_scan({"path": str(show)})
+        extras = self.gui.api_extras({})
+        self.assertEqual([i["rel"] for i in extras["items"]], ["Season 1/Show.S01E01.nfo"])

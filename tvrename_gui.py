@@ -21,6 +21,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import movierename as mr
 import tvrename as tr
 
 HERE = Path(__file__).resolve().parent
@@ -39,6 +40,12 @@ class Session:
         self.groups: dict[str, list[tr.ParsedFile]] = {}
         self.plans: dict[str, dict] = {}
         self.last_log: Path | None = None
+        # movies
+        self.movies: dict[str, mr.Movie] = {}
+        self.movie_state: dict[str, dict] = {}
+        self.match_cache: dict = {}
+        # clean-up
+        self.extras: dict[str, Path] = {}
 
     # -- TheTVDB -------------------------------------------------------------- #
     def client(self) -> tr.TVDB:
@@ -114,13 +121,20 @@ def api_browse(_):
     return {"path": path.rstrip("/") or "/"}
 
 
-def api_scan(body):
+def _resolve_root(body) -> Path:
     raw = (body.get("path") or "").strip().strip('"').strip("'")
     if not raw:
         raise ApiError("Choose a folder first.")
     root = Path(raw.replace("\\ ", " ")).expanduser()
     if not root.exists():
         raise ApiError(f"That folder can't be found: {root}. Is the network drive connected?")
+    return root
+
+
+def api_scan(body):
+    root = _resolve_root(body)
+    if body.get("mode") == "movies":
+        return movie_scan(root, body)
     files = tr.find_files(root, recursive=True, include_subs=not body.get("no_subtitles"))
     parsed, unparsed = [], []
     for f in files:
@@ -349,6 +363,195 @@ def api_undo(body):
     return {"restored": restored, "lines": lines, "root": str(root) if root else None}
 
 
+# --------------------------------------------------------------------------- #
+# Movies
+# --------------------------------------------------------------------------- #
+def movie_scan(root: Path, body) -> dict:
+    if not root.is_dir():
+        raise ApiError("Choose a folder (not a single file) for movies.")
+    movies = mr.scan_movies(root, include_subs=not body.get("no_subtitles"))
+    with SESSION.lock:
+        SESSION.root = root
+        SESSION.movies = {m.id: m for m in movies}
+        SESSION.movie_state = {}
+    return {"root": str(root), "mode": "movies",
+            "movies": [{"id": m.id, "title": m.title, "year": m.year,
+                        "folder": _movie_where(m),
+                        "files": [p.name for p in m.files]} for m in movies]}
+
+
+def _movie_row(mid: str) -> dict:
+    movie = SESSION.movies[mid]
+    st = SESSION.movie_state.get(mid, {})
+    match = st.get("match")
+    row = {"id": mid, "title": movie.title, "year": movie.year,
+           "folder": _movie_where(movie),
+           "own_folder": movie.own_folder, "candidates": st.get("candidates", []),
+           "match": match, "confidence": st.get("confidence", "none")}
+    if not match and not st.get("label"):
+        row.update(status="nomatch", message="No match found on TheTVDB", label="", changes=[])
+        return row
+    label = st.get("label") or mr.movie_label(match["name"], match.get("year"))
+    plan = mr.plan_movie(movie, label, own_folders=st.get("own_folders", True))
+    st["plan"] = plan
+    root = SESSION.root
+    changes = []
+    if plan.folder_action == "rename":
+        changes.append({"kind": "folder", "old": movie.folder.name, "new": plan.dest_dir.name})
+    elif plan.folder_action == "create":
+        changes.append({"kind": "newfolder", "old": "", "new": plan.dest_dir.name})
+    for src, dst in plan.moves:
+        inside = src.relative_to(movie.folder) if movie.own_folder else Path(src.name)
+        changes.append({"kind": "subtitle" if src.suffix.lower() in tr.SUBTITLE_EXTS else "file",
+                        "old": str(inside), "new": dst.name})
+    row.update(status=plan.status, message=plan.message, label=plan.label, changes=changes)
+    return row
+
+
+def _movie_where(movie: mr.Movie) -> str:
+    """What to show as 'this is the movie': its own folder, or the file for loose movies."""
+    if movie.own_folder:
+        return _rel(movie.folder) or movie.folder.name
+    return _rel_file(movie.parts[0][0])
+
+
+def _rel_file(p: Path) -> str:
+    root = SESSION.root
+    try:
+        return str(p.relative_to(root))
+    except (ValueError, TypeError):
+        return p.name
+
+
+def api_movie_match(body):
+    mid = body.get("id")
+    movie = SESSION.movies.get(mid)
+    if not movie:
+        raise ApiError("That movie isn't in the current scan. Please scan again.")
+    tvdb = SESSION.client()
+    try:
+        candidates = mr.find_matches(tvdb, movie, SESSION.match_cache)
+    except tr.TVDBError as e:
+        raise ApiError(str(e))
+    best = candidates[0] if candidates else None
+    SESSION.movie_state[mid] = {"candidates": candidates, "match": best,
+                                "confidence": best["confidence"] if best else "none",
+                                "own_folders": body.get("own_folders", True)}
+    return _movie_row(mid)
+
+
+def api_movie_search(body):
+    query = (body.get("query") or "").strip()
+    if not query:
+        raise ApiError("Type a movie name to search for.")
+    tvdb = SESSION.client()
+    m = tr.re.fullmatch(r"(?:id|tvdb)?[\s:#-]*(\d{3,})", query, tr.re.IGNORECASE)
+    try:
+        if m:
+            return {"results": [tvdb.get_movie(int(m.group(1)))]}
+        title, year, _ = mr.parse_title(query)
+        results = tvdb.search_movies(title, year) if year else []
+        if not results:
+            results = tvdb.search_movies(title or query)
+    except tr.TVDBError as e:
+        raise ApiError(str(e))
+    return {"results": mr.rank_matches(title, year, results)[:8]}
+
+
+def api_movie_set(body):
+    """Pick a different match, or type the name by hand."""
+    mid = body.get("id")
+    if mid not in SESSION.movies:
+        raise ApiError("That movie isn't in the current scan. Please scan again.")
+    st = SESSION.movie_state.setdefault(mid, {"candidates": []})
+    if body.get("match"):
+        match = body["match"]
+        st["match"] = {"id": match.get("id"), "name": match.get("name") or "?",
+                       "year": tr._to_int(match.get("year")), "image": match.get("image") or "",
+                       "network": match.get("network") or ""}
+        st["confidence"] = "chosen"
+        st.pop("label", None)
+    if "label" in body:
+        label = tr.safe_filename(body.get("label") or "")
+        # A typed extension ("My Movie (2010).mkv") is dropped: each file keeps its own.
+        while Path(label).suffix.lower() in tr.VIDEO_EXTS | tr.SUBTITLE_EXTS:
+            label = label[: -len(Path(label).suffix)].rstrip(" .")
+        if label:
+            st["label"] = label
+            st["confidence"] = "chosen"
+    if "own_folders" in body:
+        st["own_folders"] = bool(body["own_folders"])
+    return _movie_row(mid)
+
+
+def api_movie_apply(body):
+    ids = [r for r in body.get("ids") or [] if r in SESSION.movies]
+    if not ids:
+        raise ApiError("Nothing selected.")
+    root = SESSION.root
+    log_path = root / f"tvrename-log-{tr._dt.datetime.now():%Y%m%d-%H%M%S}.jsonl"
+    results, renamed, failed = [], 0, 0
+    for mid in ids:
+        st = SESSION.movie_state.get(mid, {})
+        row = _movie_row(mid)  # re-plan against what's on disk right now
+        plan = st.get("plan")
+        if not plan or row["status"] != "ok":
+            results.append({"id": mid, "ok": False, "title": row.get("label") or row["title"],
+                            "message": row.get("message") or "Nothing to do"})
+            failed += row["status"] not in ("same",)
+            continue
+        steps, log_path, root = mr.apply_movie(plan, log_path, root)
+        ok = all(s["ok"] for s in steps)
+        renamed += ok
+        failed += not ok
+        bad = [s for s in steps if not s["ok"]]
+        results.append({"id": mid, "ok": ok, "title": plan.label,
+                        "message": "; ".join(f'{b["old"]}: {b["message"]}' for b in bad)})
+    with SESSION.lock:
+        SESSION.root = root
+        SESSION.movie_state = {}
+        if log_path.exists():
+            SESSION.last_log = log_path
+    return {"results": results, "renamed": renamed, "failed": failed,
+            "log": str(log_path) if log_path.exists() else None, "root": str(root)}
+
+
+# --------------------------------------------------------------------------- #
+# Clean-up of extra files
+# --------------------------------------------------------------------------- #
+def api_extras(body):
+    root = SESSION.root
+    if body.get("path"):
+        root = _resolve_root(body)
+    if not root or not root.is_dir():
+        return {"items": [], "total_size": 0}
+    found = tr.find_extras(root)
+    with SESSION.lock:
+        SESSION.extras = {f"x{i}": item["path"] for i, item in enumerate(found)}
+    return {"root": str(root), "total_size": sum(i["size"] for i in found),
+            "items": [{"id": f"x{i}", "rel": item["rel"], "size": item["size"],
+                       "reason": item["reason"], "default": item["default"]}
+                      for i, item in enumerate(found)]}
+
+
+def api_clean(body):
+    ids = body.get("ids") or []
+    paths = [SESSION.extras[i] for i in ids if i in SESSION.extras]
+    if not paths:
+        raise ApiError("Nothing selected to delete.")
+    root = SESSION.root
+    log_path = root / f"tvrename-cleanup-{tr._dt.datetime.now():%Y%m%d-%H%M%S}.jsonl"
+    results = tr.delete_extras(paths, root, log_path)
+    files = [r for r in results if not r.get("folder")]
+    with SESSION.lock:
+        SESSION.extras = {}
+    return {"deleted": sum(r["ok"] for r in files),
+            "freed": sum(r.get("size", 0) for r in files if r["ok"]),
+            "folders": sum(1 for r in results if r.get("folder")),
+            "failed": [{"name": Path(r["path"]).name, "message": r["message"]}
+                       for r in files if not r["ok"]]}
+
+
 def api_quit(_):
     threading.Timer(0.3, lambda: os._exit(0)).start()
     return {"ok": True}
@@ -365,6 +568,12 @@ ROUTES = {
     "/api/logs": api_logs,
     "/api/undo": api_undo,
     "/api/quit": api_quit,
+    "/api/movie_match": api_movie_match,
+    "/api/movie_search": api_movie_search,
+    "/api/movie_set": api_movie_set,
+    "/api/movie_apply": api_movie_apply,
+    "/api/extras": api_extras,
+    "/api/clean": api_clean,
 }
 
 

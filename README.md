@@ -1,4 +1,4 @@
-# tvrename - Plex-friendly TV episode renamer (powered by TheTVDB)
+# TV Renamer - Plex-friendly names for TV shows and movies (powered by TheTVDB)
 
 Point it at a folder of TV episodes. For each file it:
 
@@ -43,7 +43,7 @@ Use `--no-folders` to rename files only, or `--no-season-padding` for `Season 1`
 No Terminal typing needed once it's set up.
 
 1. Put these files together in one folder on your Mac (for example `Documents/TV Renamer`):
-   `tvrename.py`, `tvrename_gui.py`, `tvrename_gui.html` and `TV Renamer.command`.
+   `tvrename.py`, `movierename.py`, `tvrename_gui.py`, `tvrename_gui.html` and `TV Renamer.command`.
    (Easiest: download the ZIP of this branch from GitHub and unzip it.)
 2. Double-click **TV Renamer.command**. A Terminal window opens (leave it open) and the app opens in your browser.
    - The first time, macOS may block it. Right-click the file, choose **Open**, then **Open** again.
@@ -57,6 +57,38 @@ No Terminal typing needed once it's set up.
 When you're finished, click **Quit** (or close the Terminal window).
 
 Everything runs on your own Mac. The only thing that goes out to the internet is the lookups to TheTVDB.
+
+### Movies
+
+Click **Movies** at the top of the app, choose your movies folder, and press **Scan**. Every movie gets
+the same name for its folder and its file, exactly like Plex wants:
+
+```
+The.Matrix.1999.1080p.BluRay.x264-GRP/          ->   The Matrix (1999)/
+    a8f7e6d5c4b3.mkv                            ->       The Matrix (1999).mkv
+    Subs/2_English.srt                          ->       The Matrix (1999).en.srt
+Inception.2010.1080p.BrRip.x264.mp4  (loose)    ->   Inception (2010)/Inception (2010).mp4
+```
+
+- Each movie is looked up on TheTVDB with the same API key. Sure matches are ticked for you (green).
+  Unsure ones (orange) are left unticked until you check them or click **Change** to pick another match.
+- You can type any name in a movie's box. A typed extension is ignored: every file keeps its own.
+- Movies split into parts become `Movie Name (Year) - pt1.avi`, `- pt2.avi` so the parts don't collide.
+- Loose movies get their own `Movie Name (Year)` folder (turn this off under **Naming options**).
+- Undo works for movies too.
+
+### Clean up extra files (TV and movies)
+
+After a scan, the **Clean up extra files** section lists everything that isn't a video or subtitle:
+`.nfo`, `.txt`, `.sfv`, `.url`, sample videos, and so on. Untick anything you want to keep, then press **Delete**.
+
+- **Deleting is permanent.** On a network drive files usually skip the Trash, and Undo can't bring them back.
+  The app asks you to confirm first.
+- Two kinds start **unticked** on purpose: archives (`.rar`, `.zip`) that may still hold an unpacked video,
+  and artwork Plex can use (`poster.jpg`, `fanart.jpg`).
+- Videos and subtitles are never deleted (sample videos excepted), and neither are hidden system files.
+- Folders left empty afterwards (like `Sample`) are removed.
+- A list of what was deleted is saved as `tvrename-cleanup-<date>.jsonl` in the folder.
 
 ## Command-line version
 

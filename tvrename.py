@@ -135,7 +135,13 @@ class TVDB:
 
     # -- high level --------------------------------------------------------- #
     def search_series(self, query: str, year: int | None = None) -> list[dict]:
-        params = {"query": query, "type": "series"}
+        return self._search(query, "series", year)
+
+    def search_movies(self, query: str, year: int | None = None) -> list[dict]:
+        return self._search(query, "movie", year)
+
+    def _search(self, query: str, kind: str, year: int | None = None) -> list[dict]:
+        params = {"query": query, "type": kind}
         if year:
             params["year"] = str(year)
         resp = self._request("GET", "/search", params=params)
@@ -152,11 +158,28 @@ class TVDB:
                 "id": int(digits),
                 "name": name,
                 "year": _to_int(item.get("year")),
-                "network": item.get("network") or "",
+                "network": item.get("network") or item.get("studio") or "",
                 "overview": overviews.get(self.language) or item.get("overview") or "",
                 "image": item.get("thumbnail") or item.get("image_url") or "",
             })
         return results
+
+    def get_movie(self, movie_id: int) -> dict:
+        data = self._request("GET", f"/movies/{movie_id}").get("data") or {}
+        name = data.get("name") or "?"
+        try:
+            t = self._request("GET", f"/movies/{movie_id}/translations/{self.language}")
+            name = (t.get("data") or {}).get("name") or name
+        except TVDBError:
+            pass
+        return {
+            "id": movie_id,
+            "name": name,
+            "year": _to_int(data.get("year")),
+            "network": "",
+            "overview": "",
+            "image": data.get("image") or "",
+        }
 
     def get_series(self, series_id: int) -> dict:
         data = self._request("GET", f"/series/{series_id}").get("data") or {}
@@ -470,6 +493,130 @@ def choose_series(tvdb: TVDB, guess: str, year: int | None, sample_files: list[P
 # Main workflow
 # --------------------------------------------------------------------------- #
 # --------------------------------------------------------------------------- #
+# Clean-up: files that aren't videos or subtitles
+# --------------------------------------------------------------------------- #
+ARCHIVE_RE = re.compile(r"\.(rar|zip|7z|tar|gz|r\d{2}|s\d{2}|\d{3})$", re.IGNORECASE)
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tbn"}
+ARTWORK_STEMS = {"poster", "folder", "fanart", "banner", "cover", "background", "backdrop",
+                 "logo", "clearart", "clearlogo", "thumb", "landscape", "disc", "discart", "show"}
+SYSTEM_JUNK = {".ds_store", "thumbs.db", "desktop.ini"}
+SAMPLE_RE = re.compile(r"(?<![a-z])sample(?![a-z])", re.IGNORECASE)
+
+
+def is_sample(path: Path) -> bool:
+    return bool(SAMPLE_RE.search(path.name)) or any(p.name.lower() == "sample" for p in path.parents)
+
+
+def classify_extra(path: Path) -> dict | None:
+    """Return why this file is 'extra' (removable), or None if it's media we keep."""
+    name, ext = path.name, path.suffix.lower()
+    if name.startswith("tvrename-"):
+        return None  # our own undo logs
+    if ext in SUBTITLE_EXTS:
+        return None
+    if ext in VIDEO_EXTS:
+        if is_sample(path):
+            return {"reason": "Sample video", "default": True}
+        return None
+    if ARCHIVE_RE.search(name):
+        return {"reason": "Archive (may still hold a video that wasn't unpacked)", "default": False}
+    if ext in IMAGE_EXTS:
+        stem = path.stem.lower()
+        if stem in ARTWORK_STEMS or stem.startswith("season") or stem.endswith(("-poster", "-fanart")):
+            return {"reason": "Artwork Plex can use", "default": False}
+        return {"reason": "Image", "default": True}
+    labels = {".nfo": "Info file", ".txt": "Text file", ".sfv": "Checksum file",
+              ".md5": "Checksum file", ".par2": "Repair file", ".nzb": "Download file",
+              ".url": "Web link", ".exe": "Program (Windows)", ".lnk": "Shortcut",
+              ".srr": "Release info", ".jsonl": "Log file", ".log": "Log file"}
+    return {"reason": labels.get(ext, "Other file"), "default": True}
+
+
+def find_extras(root: Path) -> list[dict]:
+    """Every file under root that isn't a video (samples count as extra) or subtitle."""
+    if not root.is_dir():
+        return []
+    found = []
+    for p in sorted(root.rglob("*"), key=lambda x: str(x).lower()):
+        rel = p.relative_to(root)
+        if any(part.startswith(".") for part in rel.parts) or p.name.lower() in SYSTEM_JUNK:
+            continue  # hidden/system files: invisible, harmless, and macOS recreates them
+        if not p.is_file():
+            continue
+        info = classify_extra(p)
+        if info is None:
+            continue
+        try:
+            size = p.stat().st_size
+        except OSError:
+            size = 0
+        found.append({"path": p, "rel": str(rel), "size": size, **info})
+    return found
+
+
+def is_effectively_empty(folder: Path) -> bool:
+    """Empty, or only holds invisible system files like .DS_Store."""
+    try:
+        return all(c.name.startswith(".") or c.name.lower() in SYSTEM_JUNK
+                   for c in folder.iterdir() if c.is_file()) and \
+            not any(c.is_dir() for c in folder.iterdir())
+    except OSError:
+        return False
+
+
+def remove_empty_dir(folder: Path) -> bool:
+    try:
+        for c in folder.iterdir():
+            c.unlink()
+        folder.rmdir()
+        return True
+    except OSError:
+        return False
+
+
+def prune_empty_dirs(start: Path, stop: Path, log_path: Path | None = None) -> list[Path]:
+    """Remove now-empty folders from start upward, never touching stop (the scanned folder)."""
+    removed = []
+    d = start
+    while d != stop and stop in d.parents:
+        if not d.is_dir() or not is_effectively_empty(d):
+            break
+        if remove_empty_dir(d):
+            removed.append(d)
+            if log_path:
+                write_log(log_path, d, Path(""), "rmdir")
+        d = d.parent
+    return removed
+
+
+def delete_extras(paths: list[Path], root: Path, log_path: Path) -> list[dict]:
+    """Permanently delete the given extra files (re-checked first), then tidy empty folders."""
+    results = []
+    touched = set()
+    for p in paths:
+        rel_ok = p == root or root in p.parents
+        info = classify_extra(p) if p.is_file() else None
+        if not rel_ok or info is None or any(x.startswith(".") for x in p.relative_to(root).parts):
+            results.append({"path": str(p), "ok": False, "message": "Not an extra file; kept"})
+            continue
+        try:
+            size = p.stat().st_size
+            p.unlink()
+        except OSError as e:
+            results.append({"path": str(p), "ok": False, "message": str(e)})
+            continue
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"old": str(p), "new": "", "kind": "deleted", "size": size,
+                                "time": _dt.datetime.now().isoformat(timespec="seconds")}) + "\n")
+        results.append({"path": str(p), "ok": True, "size": size})
+        touched.add(p.parent)
+    for d in sorted(touched, key=lambda x: len(x.parts), reverse=True):
+        for gone in prune_empty_dirs(d, root, log_path):
+            results.append({"path": str(gone), "ok": True, "folder": True})
+    return results
+
+
+# --------------------------------------------------------------------------- #
 # Folder renaming (show folder + season folders)
 # --------------------------------------------------------------------------- #
 SUBTITLE_DIR_NAMES = {"subs", "subtitles", "subtitle", "sub"}
@@ -602,7 +749,8 @@ def find_files(root: Path, recursive: bool, include_subs: bool) -> list[Path]:
     for p in it:
         if any(part.startswith(".") for part in p.relative_to(root).parts):
             continue
-        if p.is_file() and p.suffix.lower() in exts and "sample" not in p.name.lower():
+        if p.is_file() and p.suffix.lower() in exts and not is_sample(p) \
+                and p.name.lower() not in SYSTEM_JUNK:
             files.append(p)
     return sorted(files, key=lambda p: str(p).lower())
 
@@ -627,6 +775,19 @@ def undo_log(log_path: Path, dry_run: bool = False, out=print) -> int:
                if line.strip()]
     restored = 0
     for e in reversed(entries):
+        kind = e.get("kind")
+        if kind == "deleted":
+            out(f"can't restore deleted file: {Path(e['old']).name}")
+            continue
+        if kind == "rmdir":
+            if not dry_run:
+                Path(e["old"]).mkdir(parents=True, exist_ok=True)
+            continue
+        if kind == "mkdir":
+            folder = Path(e["new"])
+            if not dry_run and folder.is_dir() and is_effectively_empty(folder):
+                remove_empty_dir(folder)
+            continue
         old, new = Path(e["old"]), Path(e["new"])
         if not new.exists():
             out(f"missing, skipped: {new}")
@@ -634,7 +795,7 @@ def undo_log(log_path: Path, dry_run: bool = False, out=print) -> int:
         if old.exists() and not same_file(old, new):
             out(f"original name already in use, skipped: {old}")
             continue
-        label = "folder " if e.get("kind") in {"season", "show"} else ""
+        label = "folder " if e.get("kind") in {"season", "show", "movie"} else ""
         out(f"{label}{new.name}  ->  {old.name}")
         if not dry_run:
             old.parent.mkdir(parents=True, exist_ok=True)
