@@ -154,6 +154,7 @@ class TVDB:
                 "year": _to_int(item.get("year")),
                 "network": item.get("network") or "",
                 "overview": overviews.get(self.language) or item.get("overview") or "",
+                "image": item.get("thumbnail") or item.get("image_url") or "",
             })
         return results
 
@@ -171,6 +172,7 @@ class TVDB:
             "year": _to_int(data.get("year")) or _to_int(str(data.get("firstAired") or "")[:4]),
             "network": "",
             "overview": data.get("overview") or "",
+            "image": data.get("image") or "",
         }
 
     def get_episodes(self, series_id: int, order: str = "default") -> dict[tuple[int, int], dict]:
@@ -619,26 +621,83 @@ def write_log(log_path: Path, old: Path, new: Path, kind: str = "file") -> None:
                             "time": _dt.datetime.now().isoformat(timespec="seconds")}) + "\n")
 
 
-def undo(log_path: Path, dry_run: bool) -> int:
+def undo_log(log_path: Path, dry_run: bool = False, out=print) -> int:
+    """Reverse the renames recorded in log_path. Returns how many were restored."""
     entries = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
                if line.strip()]
     restored = 0
     for e in reversed(entries):
         old, new = Path(e["old"]), Path(e["new"])
         if not new.exists():
-            print(f"  missing, skipped: {new}")
+            out(f"missing, skipped: {new}")
             continue
-        if old.exists():
-            print(f"  original name already in use, skipped: {old}")
+        if old.exists() and not same_file(old, new):
+            out(f"original name already in use, skipped: {old}")
             continue
         label = "folder " if e.get("kind") in {"season", "show"} else ""
-        print(f"  {label}{new.name}  ->  {old.name}")
+        out(f"{label}{new.name}  ->  {old.name}")
         if not dry_run:
             old.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(new), str(old))
+            if old.parent == new.parent:
+                new.rename(old)
+            else:
+                shutil.move(str(new), str(old))
             restored += 1
-    print(f"Restored {restored} file(s).")
+    out(f"Restored {restored} item(s).")
+    return restored
+
+
+def undo(log_path: Path, dry_run: bool) -> int:
+    undo_log(log_path, dry_run, out=lambda msg: print(f"  {msg}"))
     return 0
+
+
+@dataclass
+class FilePlan:
+    pf: ParsedFile
+    target: Path | None
+    status: str          # "ok", "same", "missing", "exists"
+    message: str = ""
+
+
+def plan_file(series: dict, pf: ParsedFile, episodes: dict, include_year: bool = True,
+              include_titles: bool = True, dest_root: Path | None = None,
+              tvdb_id_folder: bool = False) -> FilePlan:
+    """Work out the new name for one file, without touching anything."""
+    titles, missing = [], []
+    for ep in pf.episodes:
+        info = episodes.get((pf.season, ep))
+        if info is None:
+            missing.append(ep)
+        else:
+            titles.append(info["name"])
+    if missing:
+        return FilePlan(pf, None, "missing",
+                        f"TheTVDB has no S{pf.season:02d}E{missing[0]:02d} for this show "
+                        f"(try a different episode order or check the number)")
+    new_name = build_new_name(series, pf, titles, include_year=include_year,
+                              include_titles=include_titles)
+    if dest_root:
+        folder = dest_root / show_label(series, include_year, tvdb_id_folder)
+        folder = folder / season_folder_name(pf.season)
+        target = folder / new_name
+    else:
+        target = pf.path.with_name(new_name)
+    target = keep_original_extension(target, pf)
+    if target == pf.path:
+        return FilePlan(pf, target, "same", "Already named correctly")
+    if target.exists() and not same_file(target, pf.path):
+        return FilePlan(pf, target, "exists", "A file with that name already exists")
+    return FilePlan(pf, target, "ok")
+
+
+def move_path(old: Path, new: Path) -> None:
+    """Rename a file or folder (moving it if it goes to a different folder)."""
+    new.parent.mkdir(parents=True, exist_ok=True)
+    if new.parent == old.parent:
+        old.rename(new)
+    else:
+        shutil.move(str(old), str(new))
 
 
 def run(args) -> int:
@@ -710,38 +769,22 @@ def run(args) -> int:
         print(f"  Loaded {len(episodes)} episodes for {series['name']}.")
 
         for idx, pf in enumerate(items, 1):
-            titles = []
-            missing = []
-            for ep in pf.episodes:
-                info = episodes.get((pf.season, ep))
-                if info is None:
-                    missing.append(ep)
-                else:
-                    titles.append(info["name"])
             print()
             print(f"[{idx}/{len(items)}] {pf.path.name}")
-            if missing:
-                print(f"   ! TheTVDB has no S{pf.season:02d}E{missing[0]:02d} for this show "
-                      f"(try --order dvd or check the number). Skipped.")
-                skipped += 1
-                continue
-
-            new_name = build_new_name(series, pf, titles, include_year=not args.no_year,
-                                      include_titles=not args.no_titles)
-            if dest_root:
-                folder = dest_root / show_label(series, not args.no_year, args.tvdb_id_folder)
-                folder = folder / ("Specials" if pf.season == 0 else f"Season {pf.season:02d}")
-                target = folder / new_name
-            else:
-                target = pf.path.with_name(new_name)
-
-            if target == pf.path:
+            plan = plan_file(series, pf, episodes, include_year=not args.no_year,
+                             include_titles=not args.no_titles, dest_root=dest_root,
+                             tvdb_id_folder=args.tvdb_id_folder)
+            if plan.status == "same":
                 print("   Already named correctly.")
                 continue
-            shown = target if dest_root else target.name
-            print(f"   -> {shown}")
-            if target.exists() and not same_file(target, pf.path):
-                print("   ! A file with that name already exists. Skipped.")
+            if plan.status == "missing":
+                print(f"   ! {plan.message}. Skipped.")
+                skipped += 1
+                continue
+            target = plan.target
+            print(f"   -> {target if dest_root else target.name}")
+            if plan.status == "exists":
+                print(f"   ! {plan.message}. Skipped.")
                 skipped += 1
                 continue
 
@@ -781,11 +824,7 @@ def run(args) -> int:
                 continue
 
             try:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if target.parent == pf.path.parent:
-                    pf.path.rename(target)
-                else:
-                    shutil.move(str(pf.path), str(target))
+                move_path(pf.path, target)
             except OSError as e:
                 print(f"   ! Rename failed: {e}")
                 skipped += 1

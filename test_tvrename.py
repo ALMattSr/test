@@ -1,6 +1,7 @@
 """Tests for tvrename.py. Run with:  python3 -m unittest -v"""
 import json
 import tempfile
+import urllib.error
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -299,6 +300,90 @@ class FolderTests(unittest.TestCase):
         self.make("The Office/Season 2/The.Office.S02E05.mkv")
         self.run_tool([str(self.root), "--yes", "--no-folders"], ["1"])
         self.assertTrue((self.root / "The Office" / "Season 2").is_dir())
+
+
+class GuiApiTests(unittest.TestCase):
+    """Drives the browser app's server functions directly (no browser, no network)."""
+
+    def setUp(self):
+        import tvrename_gui as gui
+        self.gui = gui
+        gui.SESSION = gui.Session()
+        gui.SESSION.tvdb = FakeTVDB()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "The Office"
+        for rel in ["Season 2/The.Office.S02E05.mkv", "Season 2/The.Office.S02E06.avi",
+                    "Season 2/The.Office.S02E99.mkv"]:
+            (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / rel).write_text("x")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def tree(self):
+        base = self.root.parent
+        return sorted(str(p.relative_to(base)) for p in base.rglob("*") if "tvrename-log" not in p.name)
+
+    def test_scan_plan_apply_undo(self):
+        before = self.tree()
+        scan = self.gui.api_scan({"path": str(self.root)})
+        self.assertEqual(len(scan["groups"]), 1)
+        group = scan["groups"][0]["key"]
+        series = FakeTVDB().search_series("x")[0]
+        plan = self.gui.api_plan({"group": group, "series": series, "options": {}})
+        status = {r["old"]: r["status"] for r in plan["files"]}
+        self.assertEqual(status["The.Office.S02E99.mkv"], "missing")
+        self.assertEqual([f["new"] for f in plan["folders"]], ["Season 02", "The Office (US) (2005)"])
+
+        rows = [{"id": r["id"], "new": r["new"]} for r in plan["files"] + plan["folders"]
+                if r["status"] == "ok"]
+        # User edits one name and types the wrong extension: it must stay .avi
+        for r in rows:
+            if r["new"].endswith(".avi"):
+                r["new"] = "Edited Name.mkv"
+        done = self.gui.api_apply({"plan_id": plan["plan_id"], "rows": rows})
+        self.assertEqual(done["failed"], 0)
+        self.assertEqual(self.tree(), [
+            "The Office (US) (2005)",
+            "The Office (US) (2005)/Season 02",
+            "The Office (US) (2005)/Season 02/Edited Name.avi",
+            "The Office (US) (2005)/Season 02/The Office (US) (2005) - S02E05 - Halloween.mkv",
+            "The Office (US) (2005)/Season 02/The.Office.S02E99.mkv",
+        ])
+        self.assertTrue(done["root"].endswith("The Office (US) (2005)"))
+
+        undone = self.gui.api_undo({"log": done["log"]})
+        self.assertEqual(undone["restored"], 4)
+        self.assertEqual(self.tree(), before)
+        self.assertEqual(undone["root"], str(self.root))
+
+    def test_unticked_rows_are_left_alone(self):
+        scan = self.gui.api_scan({"path": str(self.root)})
+        plan = self.gui.api_plan({"group": scan["groups"][0]["key"],
+                                  "series": FakeTVDB().search_series("x")[0], "options": {"no_folders": True}})
+        self.assertEqual(plan["folders"], [])
+        done = self.gui.api_apply({"plan_id": plan["plan_id"], "rows": []})
+        self.assertEqual(done["renamed"], 0)
+        self.assertIn("Season 2/The.Office.S02E05.mkv", [str(p.relative_to(self.root)) for p in self.root.rglob("*")])
+
+    def test_requests_need_the_secret_token(self):
+        import threading, urllib.request
+        from http.server import ThreadingHTTPServer
+        server = ThreadingHTTPServer(("127.0.0.1", 0), self.gui.Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            url = f"http://127.0.0.1:{server.server_address[1]}"
+            req = urllib.request.Request(url + "/api/scan", data=b"{}", method="POST")
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req, timeout=5)
+            self.assertEqual(cm.exception.code, 403)
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(url + "/", timeout=5)
+            self.assertEqual(cm.exception.code, 403)
+            with urllib.request.urlopen(f"{url}/?t={self.gui.TOKEN}", timeout=5) as resp:
+                self.assertIn(b"TV Renamer", resp.read())
+        finally:
+            server.shutdown()
 
 
 class ApiClientTests(unittest.TestCase):

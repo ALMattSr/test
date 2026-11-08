@@ -38,7 +38,29 @@ To stay safe on a shared drive, it only renames:
 It never merges two folders. If `Season 02` already exists next to `Season 2`, it leaves both alone and tells you.
 Use `--no-folders` to rename files only, or `--no-season-padding` for `Season 1` instead of `Season 01`.
 
-## Setup (one time)
+## Easiest way: the TV Renamer app (opens in your browser)
+
+No Terminal typing needed once it's set up.
+
+1. Put these files together in one folder on your Mac (for example `Documents/TV Renamer`):
+   `tvrename.py`, `tvrename_gui.py`, `tvrename_gui.html` and `TV Renamer.command`.
+   (Easiest: download the ZIP of this branch from GitHub and unzip it.)
+2. Double-click **TV Renamer.command**. A Terminal window opens (leave it open) and the app opens in your browser.
+   - The first time, macOS may block it. Right-click the file, choose **Open**, then **Open** again.
+   - If it says "permission denied", run this once in Terminal, then double-click again:
+     `chmod +x ~/Documents/"TV Renamer"/"TV Renamer.command"`
+3. Paste your TheTVDB API key the first time (it's remembered).
+4. Click **Choose folder…**, pick a show's folder on your network drive, and pick the right show.
+5. Review the list. Untick anything you don't want, click a new name to change it, then press **Rename**.
+6. Changed your mind? **Undo this** (or **Undo a run** at the top) puts everything back.
+
+When you're finished, click **Quit** (or close the Terminal window).
+
+Everything runs on your own Mac. The only thing that goes out to the internet is the lookups to TheTVDB.
+
+## Command-line version
+
+### Setup (one time)
 
 1. Install **Python 3.8 or newer** ([python.org](https://www.python.org/downloads/)). Nothing else to install.
 2. Get a TheTVDB API key: create an account, then request a key at <https://thetvdb.com/api-information>.
@@ -46,7 +68,7 @@ Use `--no-folders` to rename files only, or `--no-season-padding` for `Season 1`
 3. The first time you run the tool it asks for the key and offers to save it to `~/.tvrename.json`.
    (You can also use `--api-key` or the `TVDB_API_KEY` environment variable.)
 
-## Everyday use
+### Everyday use
 
 Always try a **dry run** first. It shows every new name without changing anything:
 
@@ -63,7 +85,7 @@ python3 tvrename.py "Z:\TV Shows\The Office"
 On Windows, use `python` or `py` instead of `python3` if that's how Python is installed.
 On a Mac, a network share usually lives under `/Volumes/<ShareName>/...`.
 
-### Handy options
+#### Handy options
 
 | Option | What it does |
 | --- | --- |
@@ -81,7 +103,7 @@ On a Mac, a network share usually lives under `/Volumes/<ShareName>/...`.
 | `--no-recursive` | Don't look inside subfolders |
 | `--undo LOGFILE` | Put everything back the way it was |
 
-### Undo
+#### Undo
 
 Every run writes a log (`tvrename-log-<date>.jsonl`) in the folder you processed (if that folder gets
 renamed, the log moves with it). Undo reverses file *and* folder renames. To reverse a run:
@@ -90,7 +112,7 @@ renamed, the log moves with it). Undo reverses file *and* folder renames. To rev
 python3 tvrename.py --undo "Z:\TV Shows\The Office\tvrename-log-20261108-101500.jsonl"
 ```
 
-### Tips when choosing the show
+#### Tips when choosing the show
 
 At the show prompt you can:
 - press **Enter** to take the top result,
