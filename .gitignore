@@ -1,0 +1,3 @@
+__pycache__/
+*.pyc
+tvrename-log-*.jsonl
