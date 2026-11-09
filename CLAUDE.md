@@ -105,7 +105,8 @@ The Python file names still say "tvrename" from before movies were added. The vi
 1. Built the TV renamer CLI (TheTVDB lookup, per-file confirmation, dry run, undo, subtitles).
 2. Helped him run it on his Mac. Problems he hit:
    - `can't open file`: he ran it from the show folder. Use the script's full path.
-   - He only had the `main` branch. The work lives on branch `claude/blissful-sagan-b6tdra`.
+   - He only had the `main` branch. The work was then on branch `claude/blissful-sagan-b6tdra`
+     (since moved to his own repository; see Git below).
 3. Changed episode codes to uppercase `S01E01`.
 4. Hardened extension safety after he reported extensions changing. The cause was never reproduced;
    the best guess was Finder hiding extensions or an edited name.
@@ -138,6 +139,9 @@ The Python file names still say "tvrename" from before movies were added. The vi
 
 ## Git
 
-- Work on branch `claude/blissful-sagan-b6tdra` of `ALMattSr/test`. Commit with clear messages and
-  push there.
-- No pull request has been opened. Don't open one unless he asks.
+- **Aaron owns this repository and pushes changes himself.** The project was first built in
+  `ALMattSr/test` (branch `claude/blissful-sagan-b6tdra`). He has since moved the files into his own
+  repository and manages it on his own. The old repository is no longer where the work lives.
+- Work in whatever repository and branch this session was started on. Don't push to, or open pull
+  requests against, the old `ALMattSr/test` repository.
+- Before committing or pushing, check with him. He may prefer to review and push changes himself.
